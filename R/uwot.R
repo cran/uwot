@@ -1120,6 +1120,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     ab_res <- find_ab_params(spread = spread, min_dist = min_dist)
     a <- ab_res[1]
     b <- ab_res[2]
+    tsmessage("UMAP embedding parameters a = ", formatC(a), " b = ", formatC(b))
   }
   
   if (n_neighbors < 2) {
@@ -1701,8 +1702,8 @@ load_uwot <- function(file) {
         stop("Can't find nearest neighbor index ", nn_fname, " in ", file)
       }
       metric <- metrics[[i]]
-      # can provide any value for ndim as we get a new value when we load
-      ann <- create_ann(metric, ndim = 1)
+      # 31: need to specify the index dimensionality when creating the index
+      ann <- create_ann(metric, ndim = length(model$metric[[i]]))
       ann$load(nn_fname)
       if (n_metrics == 1) {
         model$nn_index <- ann

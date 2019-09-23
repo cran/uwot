@@ -1,3 +1,13 @@
+# uwot 0.1.4
+
+## Bug fixes and minor improvements
+
+* Fixed incorrect loading of Annoy indexes to be compatible with newer versions
+of RcppAnnoy (<https://github.com/jlmelville/uwot/issues/31>). My thanks to
+Dirk Eddelbuettel and Erik Bernhardsson for aid in identifying the problem.
+* Fix for `ERROR: there is already an InterruptableProgressMonitor instance defined`
+* If `verbose = TRUE`, the `a`, `b` curve parameters are now logged.
+
 # uwot 0.1.3
 
 ## Bug fixes and minor improvements

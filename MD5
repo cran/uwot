@@ -1,6 +1,6 @@
-6af0a7704602c9c3a60302840d01a4a3 *DESCRIPTION
+d4de79ca68ae4a0fca6ffdd292f06541 *DESCRIPTION
 1888d4d450bcec5ad02e7a123a984f56 *NAMESPACE
-e07655ed7c8174d40404b50b763eae08 *NEWS.md
+a8e7781d983a1d22d40b5fc6e8133dde *NEWS.md
 30b89a123e22deaf8dbfed03ee317f96 *R/RcppExports.R
 ecc3cb1b5a0e2ba8902f6bc4ab98233f *R/affinity.R
 b890de59a3f577ea51bdca0c26b0d1f8 *R/init.R
@@ -9,7 +9,7 @@ d6ceca0b9b353a9097c7c957472ec6cb *R/progress.R
 ba63b10e43d5868f4d0fb2d85e43e02f *R/supervised.R
 f76a3d9d9912faa08a1ae1fa5508e405 *R/transform.R
 406b4f4e95eeba731daa6bb2ba8e363a *R/util.R
-12e6cf6f7bd5d2001aecd7ef7fa88848 *R/uwot.R
+708612a5ea87ab2c6602e4fb96bbf2dc *R/uwot.R
 6ff6479c7bd25c0e39e3d32df6c12faa *man/load_uwot.Rd
 8f285450e3db032e9f3c9f3c14cfadeb *man/lvish.Rd
 b988cc7522a8bace71e1b66183d45ec0 *man/save_uwot.Rd
@@ -23,7 +23,7 @@ b988cc7522a8bace71e1b66183d45ec0 *man/save_uwot.Rd
 17553353d99555421f896ac46b086086 *src/gradient.cpp
 43e55a9b685d5a0b04609416b522b162 *src/gradient.h
 70e01bdca4b19b67529d0083caa9533d *src/nn_parallel.cpp
-71c7cab1d9cd87639cce11e593378612 *src/optimize.cpp
+6dac92ae382d22e24b68b02b2bf29060 *src/optimize.cpp
 676245e4488a3e4f62e23d623370b062 *src/perplexity.cpp
 0b1fea6ec3b4c5e11197e8972dba85fe *src/sampler.cpp
 a6b6a439e8f81b4192cc5e4c3e13df00 *src/sampler.h
