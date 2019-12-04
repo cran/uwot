@@ -1,8 +1,10 @@
 Package: uwot
 Title: The Uniform Manifold Approximation and Projection (UMAP) Method
         for Dimensionality Reduction
-Version: 0.1.4
-Authors@R: person("James", "Melville", email = "jlmelville@gmail.com", role = c("aut", "cre"))
+Version: 0.1.5
+Authors@R: 
+    c(person("James", "Melville", email = "jlmelville@gmail.com", role = c("aut", "cre")),
+    person("Aaron", "Lun", role="ctb"),person("Mohamed Nadhir", "Djekidel", role="ctb"))
 Description: An implementation of the Uniform Manifold Approximation and 
     Projection dimensionality reduction by McInnes et al. (2018) 
     <arXiv:1802.03426>. It also provides means to transform new data and to 
@@ -17,15 +19,17 @@ BugReports: https://github.com/jlmelville/uwot/issues
 Encoding: UTF-8
 LazyData: true
 Suggests: testthat, covr
-RoxygenNote: 6.1.1
+RoxygenNote: 7.0.2
 Depends: Matrix
 LinkingTo: Rcpp, RcppProgress, RcppParallel, RcppAnnoy, dqrng
 Imports: Rcpp, methods, FNN, RSpectra, RcppAnnoy (>= 0.0.11),
         RcppParallel, irlba
 SystemRequirements: GNU make
 NeedsCompilation: yes
-Packaged: 2019-09-23 03:14:47 UTC; jlmel
-Author: James Melville [aut, cre]
+Packaged: 2019-12-04 08:05:20 UTC; jlmel
+Author: James Melville [aut, cre],
+  Aaron Lun [ctb],
+  Mohamed Nadhir Djekidel [ctb]
 Maintainer: James Melville <jlmelville@gmail.com>
 Repository: CRAN
-Date/Publication: 2019-09-23 08:20:02 UTC
+Date/Publication: 2019-12-04 16:20:02 UTC
