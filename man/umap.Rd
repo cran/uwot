@@ -37,7 +37,8 @@ umap(
   fast_sgd = FALSE,
   ret_model = FALSE,
   ret_nn = FALSE,
-  n_threads = max(1, RcppParallel::defaultNumThreads()/2),
+  ret_extra = c(),
+  n_threads = NULL,
   n_sgd_threads = 0,
   grain_size = 1,
   tmpdir = tempdir(),
@@ -105,8 +106,10 @@ PCA applied to both, but with centering applied only to the real-valued data
 (it is typical not to apply centering to binary data before PCA is applied).}
 
 \item{n_epochs}{Number of epochs to use during the optimization of the
-embedded coordinates. By default, this value is set to \code{500} for datasets
-containing 10,000 vertices or less, and \code{200} otherwise.}
+embedded coordinates. By default, this value is set to \code{500} for
+datasets containing 10,000 vertices or less, and \code{200} otherwise.
+If \code{n_epochs = 0}, then coordinates determined by \code{"init"} will
+be returned.}
 
 \item{learning_rate}{Initial learning rate used in optimization of the
 coordinates.}
@@ -336,12 +339,12 @@ and \code{approx_pow} are ignored.}
 add new data to an existing embedding via \code{\link{umap_transform}}. The
 embedded coordinates are returned as the list item \code{embedding}. If
 \code{FALSE}, just return the coordinates. This parameter can be used in
-conjunction with \code{ret_nn}. Note that some settings are incompatible
-with the production of a UMAP model: external neighbor data (passed via a
-list to \code{nn_method}), and factor columns that were included
-via the \code{metric} parameter. In the latter case, the model produced is
-based only on the numeric data. A transformation using new data is
-possible, but the factor columns in the new data are ignored.}
+conjunction with \code{ret_nn} and \code{ret_extra}. Note that some
+settings are incompatible with the production of a UMAP model: external
+neighbor data (passed via a list to \code{nn_method}), and factor columns
+that were included via the \code{metric} parameter. In the latter case, the
+model produced is based only on the numeric data. A transformation using
+new data is possible, but the factor columns in the new data are ignored.}
 
 \item{ret_nn}{If \code{TRUE}, then in addition to the embedding, also return
 nearest neighbor data that can be used as input to \code{nn_method} to
@@ -351,23 +354,47 @@ manipulating unrelated parameters (e.g. \code{min_dist}, \code{n_epochs},
 \code{FALSE}, just return the coordinates. Note that the nearest neighbors
 could be sensitive to data scaling, so be wary of reusing nearest neighbor
 data if modifying the \code{scale} parameter. This parameter can be used in
-conjunction with \code{ret_model}.}
+conjunction with \code{ret_model} and \code{ret_extra}.}
+
+\item{ret_extra}{A vector indicating what extra data to return. May contain
+any combination of the following strings:
+\itemize{
+  \item \code{"model"} Same as setting `ret_model = TRUE`.
+  \item \code{"nn"} Same as setting `ret_nn = TRUE`.
+  \item \code{"fgraph"} the high dimensional fuzzy graph (i.e. the fuzzy
+    simplicial set of the merged local views of the input data). The graph
+    is returned as a sparse symmetric N x N matrix of class
+    \link[Matrix]{dgCMatrix-class}, where a non-zero entry (i, j) gives the
+    membership strength of the edge connecting vertex i and vertex j. This
+    can be considered analogous to the input probability (or similarity or
+    affinity) used in t-SNE and LargeVis. Note that the graph is further
+    sparsified by removing edges with sufficiently low membership strength
+    that they would not be sampled by the probabilistic edge sampling
+    employed for optimization and therefore the number of non-zero elements
+    in the matrix is dependent on \code{n_epochs}. If you are only
+    interested in the fuzzy input graph (e.g. for clustering), setting
+    `n_epochs = 0` will avoid any further sparsifying.
+}}
 
 \item{n_threads}{Number of threads to use (except during stochastic gradient
-descent). Default is half that recommended by RcppParallel. For
-nearest neighbor search, only applies if \code{nn_method = "annoy"}. If
-\code{n_threads > 1}, then the Annoy index will be temporarily written to
-disk in the location determined by \code{\link[base]{tempfile}}.}
+descent). Default is half the number of concurrent threads supported by the
+system. For nearest neighbor search, only applies if 
+\code{nn_method = "annoy"}. If \code{n_threads > 1}, then the Annoy index 
+will be temporarily written to disk in the location determined by
+\code{\link[base]{tempfile}}.}
 
 \item{n_sgd_threads}{Number of threads to use during stochastic gradient
 descent. If set to > 1, then results will not be reproducible, even if
 `set.seed` is called with a fixed seed before running. Set to
 \code{"auto"} go use the same value as \code{n_threads}.}
 
-\item{grain_size}{Minimum batch size for multithreading. If the number of
-items to process in a thread falls below this number, then no threads will
-be used. Used in conjunction with \code{n_threads} and
-\code{n_sgd_threads}.}
+\item{grain_size}{The minimum amount of work to do on each thread. If this
+value is set high enough, then less than \code{n_threads} or
+\code{n_sgd_threads} will be used for processing, which might give a
+performance improvement if the overhead of thread management and context
+switching was outweighing the improvement due to concurrent processing.
+This should be left at default (\code{1}) and work will be spread evenly
+over all the threads specified.}
 
 \item{tmpdir}{Temporary directory to store nearest neighbor indexes during
 nearest neighbor search. Default is \code{\link{tempdir}}. The index is
@@ -379,19 +406,23 @@ only written to disk if \code{n_threads > 1} and
 \value{
 A matrix of optimized coordinates, or:
   \itemize{
-    \item if \code{ret_model = TRUE}, returns a
-    list containing extra information that can be used to add new data to an
-    existing embedding via \code{\link{umap_transform}}. In this case, the
-    coordinates are available in the list item \code{embedding}.
-    \item if \code{ret_nn = TRUE}, returns the nearest neighbor data as a
-    list called \code{nn}. This contains one list for each \code{metric}
-    calculated, itself containing a matrix \code{idx} with the integer ids of
-    the neighbors; and a matrix \code{dist} with the distances. The \code{nn}
-    list (or a sub-list) can be used as input to the \code{nn_method}
-    parameter.
+    \item if \code{ret_model = TRUE} (or \code{ret_extra} contains
+    \code{"model"}), returns a list containing extra information that can be
+    used to add new data to an existing embedding via
+    \code{\link{umap_transform}}. In this case, the coordinates are available
+    in the list item \code{embedding}.
+    \item if \code{ret_nn = TRUE} (or \code{ret_extra} contains \code{"nn"}),
+    returns the nearest neighbor data as a list called \code{nn}. This
+    contains one list for each \code{metric} calculated, itself containing a
+    matrix \code{idx} with the integer ids of the neighbors; and a matrix
+    \code{dist} with the distances. The \code{nn} list (or a sub-list) can be
+    used as input to the \code{nn_method} parameter.
+    \item if \code{ret_extra} contains \code{"fgraph"} returns the high
+    dimensional fuzzy graph as a sparse matrix called \code{fgraph}, of type
+    \link[Matrix]{dgCMatrix-class}.
   }
-  Both \code{ret_model} and \code{ret_nn} can be \code{TRUE}, in which case
-  the returned list contains the combined data.
+  The returned list contains the combined data from any combination of
+  specifying \code{ret_model}, \code{ret_nn} and \code{ret_extra}.
 }
 \description{
 Carry out dimensionality reduction of a dataset using the Uniform Manifold
@@ -399,54 +430,35 @@ Approximation and Projection (UMAP) method (McInnes & Healy, 2018). Some of
 the following help text is lifted verbatim from the Python reference
 implementation at \url{https://github.com/lmcinnes/umap}.
 }
+\details{
+Note that the \code{grain_size} parameter no longer does anything and is
+present to avoid break backwards compatibility only.
+}
 \examples{
+
+iris30 <- iris[c(1:10, 51:60, 101:110), ]
+
 # Non-numeric columns are automatically removed so you can pass data frames
 # directly in a lot of cases without pre-processing
-iris_umap <- umap(iris,
-  n_neighbors = 50, learning_rate = 0.5,
-  init = "random"
-)
+iris_umap <- umap(iris30, n_neighbors = 5, learning_rate = 0.5, init = "random", n_epochs = 20)
 
-# Although not an issue for the iris dataset, for high dimensional data
-# (> 100 columns), using PCA to reduce dimensionality is highly
-# recommended to avoid nearest neighbor searches taking a long time
-# 50 dimensions is a good value to start with. If there are fewer columns
-# in the input than the requested number of components, the parameter is
-# ignored.
-iris_umap <- umap(iris, pca = 50)
-
-# Faster approximation to the gradient
-iris_umap <- umap(iris, n_neighbors = 15, approx_pow = TRUE)
+# Faster approximation to the gradient and return nearest neighbors
+iris_umap <- umap(iris30, n_neighbors = 5, approx_pow = TRUE, ret_nn = TRUE, n_epochs = 20)
 
 # Can specify min_dist and spread parameters to control separation and size
-# of clusters
-iris_umap <- umap(iris, n_neighbors = 15, min_dist = 1, spread = 5)
+# of clusters and reuse nearest neighbors for efficiency
+nn <- iris_umap$nn
+iris_umap <- umap(iris30, n_neighbors = 5, min_dist = 1, spread = 5, nn_method = nn, n_epochs = 20)
 
 # Supervised dimension reduction using the 'Species' factor column
-iris_sumap <- umap(iris,
-  n_neighbors = 15, min_dist = 0.001,
-  y = iris$Species, target_weight = 0.5
-)
-\donttest{
+iris_sumap <- umap(iris30, n_neighbors = 5, min_dist = 0.001, y = iris30$Species, 
+                   target_weight = 0.5, n_epochs = 20)
+
 # Calculate Petal and Sepal neighbors separately (uses intersection of the resulting sets):
-iris_umap <- umap(iris, metric = list(
+iris_umap <- umap(iris30, metric = list(
   "euclidean" = c("Sepal.Length", "Sepal.Width"),
   "euclidean" = c("Petal.Length", "Petal.Width")
 ))
-
-# Can also use individual factor columns
-iris_umap <- umap(iris, metric = list(
-  "euclidean" = c("Sepal.Length", "Sepal.Width"),
-  "euclidean" = c("Petal.Length", "Petal.Width"),
-  "categorical" = "Species"
-))
-# Return NN info
-iris_umap <- umap(iris, ret_nn = TRUE)
-
-# Re-use NN info for greater efficiency
-# Here we use random initialization
-iris_umap_spca <- umap(iris, init = "rand", nn_method = iris_umap$nn)
-}
 
 }
 \references{

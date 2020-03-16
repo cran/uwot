@@ -20,7 +20,7 @@ lvish(
   nn_method = NULL,
   n_trees = 50,
   search_k = 2 * n_neighbors * n_trees,
-  n_threads = max(1, RcppParallel::defaultNumThreads()/2),
+  n_threads = NULL,
   n_sgd_threads = 0,
   grain_size = 1,
   kernel = "gauss",
@@ -29,6 +29,7 @@ lvish(
   pcg_rand = TRUE,
   fast_sgd = FALSE,
   ret_nn = FALSE,
+  ret_extra = c(),
   tmpdir = tempdir(),
   verbose = getOption("verbose", TRUE)
 )
@@ -99,7 +100,8 @@ PCA applied to both, but with centering applied only to the real-valued data
 embedded coordinates. The default is calculate the number of epochs
 dynamically based on dataset size, to give the same number of edge samples
 as the LargeVis defaults. This is usually substantially larger than the
-UMAP defaults.}
+UMAP defaults. If \code{n_epochs = 0}, then coordinates determined by
+\code{"init"} will be returned.}
 
 \item{learning_rate}{Initial learning rate used in optimization of the
 coordinates.}
@@ -211,20 +213,24 @@ With \code{n_trees}, determines the accuracy of the Annoy nearest neighbor
 search. Only used if the \code{nn_method} is \code{"annoy"}.}
 
 \item{n_threads}{Number of threads to use (except during stochastic gradient
-descent). Default is half that recommended by RcppParallel. For
-nearest neighbor search, only applies if \code{nn_method = "annoy"}. If
-\code{n_threads > 1}, then the Annoy index will be temporarily written to
-disk in the location determined by \code{\link[base]{tempfile}}.}
+descent). Default is half the number of concurrent threads supported by the
+system. For nearest neighbor search, only applies if 
+\code{nn_method = "annoy"}. If \code{n_threads > 1}, then the Annoy index 
+will be temporarily written to disk in the location determined by
+\code{\link[base]{tempfile}}.}
 
 \item{n_sgd_threads}{Number of threads to use during stochastic gradient
 descent. If set to > 1, then results will not be reproducible, even if
 `set.seed` is called with a fixed seed before running. Set to
 \code{"auto"} go use the same value as \code{n_threads}.}
 
-\item{grain_size}{Minimum batch size for multithreading. If the number of
-items to process in a thread falls below this number, then no threads will
-be used. Used in conjunction with \code{n_threads} and
-\code{n_sgd_threads}.}
+\item{grain_size}{The minimum amount of work to do on each thread. If this
+value is set high enough, then less than \code{n_threads} or
+\code{n_sgd_threads} will be used for processing, which might give a
+performance improvement if the overhead of thread management and context
+switching was outweighing the improvement due to concurrent processing.
+This should be left at default (\code{1}) and work will be spread evenly
+over all the threads specified.}
 
 \item{kernel}{Type of kernel function to create input probabilities. Can be
 one of \code{"gauss"} (the default) or \code{"knn"}. \code{"gauss"} uses
@@ -272,6 +278,23 @@ manipulating unrelated parameters (e.g. \code{min_dist}, \code{n_epochs},
 could be sensitive to data scaling, so be wary of reusing nearest neighbor
 data if modifying the \code{scale} parameter.}
 
+\item{ret_extra}{A vector indicating what extra data to return. May contain
+any combination of the following strings:
+\itemize{
+  \item \code{"nn"} same as setting `ret_nn = TRUE`.
+  \item \code{"P"} the high dimensional probability matrix. The graph
+  is returned as a sparse symmetric N x N matrix of class
+  \link[Matrix]{dgCMatrix-class}, where a non-zero entry (i, j) gives the
+  input probability (or similarity or affinity) of the edge connecting
+  vertex i and vertex j. Note that the graph is further sparsified by
+  removing edges with sufficiently low membership strength that they would
+  not be sampled by the probabilistic edge sampling employed for
+  optimization and therefore the number of non-zero elements in the matrix
+  is dependent on \code{n_epochs}. If you are only interested in the fuzzy
+  input graph (e.g. for clustering), setting `n_epochs = 0` will avoid any
+  further sparsifying.
+}}
+
 \item{tmpdir}{Temporary directory to store nearest neighbor indexes during
 nearest neighbor search. Default is \code{\link{tempdir}}. The index is
 only written to disk if \code{n_threads > 1} and
@@ -280,11 +303,20 @@ only written to disk if \code{n_threads > 1} and
 \item{verbose}{If \code{TRUE}, log details to the console.}
 }
 \value{
-A matrix of optimized coordinates, or if \code{ret_nn = TRUE},
-  returns the nearest neighbor data as a list containing a matrix \code{idx}
-  with the integer ids of the neighbors; and a matrix \code{dist} with the
-  distances. This list can be used as input to the \code{nn_method}
-  parameter.
+A matrix of optimized coordinates, or:
+  \itemize{
+    \item if \code{ret_nn = TRUE} (or \code{ret_extra} contains \code{"nn"}),
+    returns the nearest neighbor data as a list called \code{nn}. This
+    contains one list for each \code{metric} calculated, itself containing a
+    matrix \code{idx} with the integer ids of the neighbors; and a matrix
+    \code{dist} with the distances. The \code{nn} list (or a sub-list) can be
+    used as input to the \code{nn_method} parameter.
+    \item if \code{ret_extra} contains \code{"P"}, returns the high
+    dimensional probability matrix as a sparse matrix called \code{P}, of
+    type \link[Matrix]{dgCMatrix-class}.
+  }
+  The returned list contains the combined data from any combination of
+  specifying \code{ret_nn} and \code{ret_extra}.
 }
 \description{
 Carry out dimensionality reduction of a dataset using a method similar to
@@ -310,22 +342,18 @@ following:
   \code{\link{umap}}, but may need to be increased further depending on your
   dataset. Using \code{init = "spectral"} can help.
 }
+
+Note that the \code{grain_size} parameter no longer does anything and is
+present to avoid break backwards compatibility only.
 }
 \examples{
 # Default number of epochs is much larger than for UMAP, assumes random
+# initialization. Use perplexity rather than n_neighbors to control the size
+# of the local neighborhood 20 epochs may be too small for a random 
 # initialization
-# If using a more global initialization, can use fewer epochs
-iris_lvish_short <- lvish(iris,
-  perplexity = 50, n_epochs = 200,
-  init = "pca"
-)
-
-# Use perplexity rather than n_neighbors to control the size of the local
-# neighborhood
-# 200 epochs may be too small for a random initialization
 iris_lvish <- lvish(iris,
   perplexity = 50, learning_rate = 0.5,
-  init = "random", n_epochs = 200
+  init = "random", n_epochs = 20
 )
 }
 \references{

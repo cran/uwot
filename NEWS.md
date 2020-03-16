@@ -1,3 +1,95 @@
+# uwot 0.1.8
+
+## Big fixes and minor improvements
+
+* default for `n_threads` is now `NULL` to provide a bit more protection from
+changing dependencies.
+* parallel code now uses the standard C++11 implementation of threading rather 
+than tinythread++.
+* The `grain_size` parameter has been undeprecated. As the version that 
+deprecated this never made it to CRAN, this is unlikely to have affected many
+people.
+
+# uwot 0.1.7
+
+## Bug fixes and minor improvements
+
+* uwot should no longer trigger undefined behavior in sanitizers, due to the
+temporary replacement of the RcppParallel package with code "borrowed" from
+that package and using tinythread++ rather than tbb 
+(<https://github.com/jlmelville/uwot/issues/52>).
+* Further sanitizer improvements in the nearest neighbor search code due to
+the upstream efforts of [erikbern](https://github.com/erikbern) and
+[eddelbuettel](https://github.com/eddelbuettel)
+(<https://github.com/jlmelville/uwot/issues/50>).
+* The `grain_size` parameter is now ignored and remains to avoid breaking
+backwards compatibility only.
+
+# uwot 0.1.6
+
+## New features
+
+* New parameter, `ret_extra`, a vector which can contain any combination of: 
+`"model"` (same as `ret_model = TRUE`), `"nn"` (same as `ret_nn = TRUE`) and 
+`fgraph` (see below).
+* New return value data: If the `ret_extra` vector contains `"fgraph"`, the 
+returned list will contain an `fgraph` item representing the fuzzy simplicial 
+input graph as a sparse N x N matrix. For `lvish`, use `"P"` instead of 
+`"fgraph`" (<https://github.com/jlmelville/uwot/issues/47>). Note that there
+is a further sparsifying step where edges with a very low membership are removed
+if there is no prospect of the edge being sampled during optimization. This is
+controlled by `n_epochs`: the smaller the value, the more sparsifying will
+occur. If you are only interested in the fuzzy graph and not the embedded
+coordinates, set `n_epochs = 0`.
+* New function: `unload_uwot`, to unload the Annoy nearest neighbor indices in
+a model. This prevents the model from being used in `umap_transform`, but allows
+for the temporary working directory created by both `save_uwot` and `load_uwot`
+to be deleted. Previously, both `load_uwot` and `save_uwot` were attempting to
+delete the temporary working directories they used, but would always silently
+fail because Annoy is making use of files in those directories.
+* An attempt has been made to reduce the variability of results due to different
+compiler and C++ library versions on different machines. Visually results are
+unchanged in most cases, but this is a breaking change in terms of numerical
+output. The best chance of obtaining floating point determinism across machines
+is to use `init = "spca"`, fixed values of `a` and `b` (rather than allowing
+them to be calculated through setting `min_dist` and `spread`) and
+`approx_pow = TRUE`. Using the `tumap` method with `init = "spca"` is probably
+the most robust approach.
+
+## Bug fixes and minor improvements
+
+* New behavior when `n_epochs = 0`. This used to behave like (`n_epochs = NULL`)
+and gave a default number of epochs (dependent on the number of vertices in the
+dataset). Now it more usefully carries out all calculations except optimization,
+so the returned coordinates are those specified by the `init` parameter, so this
+is an easy way to access e.g. the spectral or PCA initialization coordinates.
+If you want the input fuzzy graph (`ret_extra` vector contains `"fgraph"`), this
+will also prevent the graph having edges with very low membership being removed.
+You still get the old default epochs behavior by setting `n_epochs = NULL` or to
+a negative value.
+* `save_uwot` and `load_uwot` have been updated with a `verbose` parameter so
+it's easier to see what temporary files are being created.
+* `save_uwot` has a new parameter, `unload`, which if set to `TRUE` will delete
+the working directory for you, at the cost of unloading the model, i.e. it can't 
+be used with `umap_transform` until you reload it with `load_uwot`.
+* `save_uwot` now returns the saved model with an extra field, `mod_dir`, which
+points to the location of the temporary working directory, so you should now
+assign the result of calling `save_uwot` to the model you saved, e.g.
+`model <- save_uwot(model, "my_model_file")`. This field is intended for use
+with `unload_uwot`.
+* `load_uwot` also returns the model with a `mod_dir` item for use with 
+`unload_uwot`.
+* `save_uwot` and `load_uwot` were not correctly handling relative paths.
+* A previous bug fix to `load_uwot` in uwot 0.1.4 to work with newer versions
+of RcppAnnoy (<https://github.com/jlmelville/uwot/issues/31>) failed in the 
+typical case of a single metric for the nearest neighbor search using all 
+available columns, giving an error message along the lines of:
+`Error: index size <size> is not a multiple of vector size <size>`. This has now
+been fixed, but required changes to both `save_uwot` and `load_uwot`, so 
+existing saved models must be regenerated. Thank you to reporter 
+[OuNao](https://github.com/OuNao).
+
+
 # uwot 0.1.5
 
 ## Bug fixes and minor improvements

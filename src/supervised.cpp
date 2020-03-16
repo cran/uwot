@@ -17,42 +17,36 @@
 //  You should have received a copy of the GNU General Public License
 //  along with UWOT.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <limits>
+
+#include "uwot/supervised.h"
+
 #include <Rcpp.h>
 using namespace Rcpp;
 
 // [[Rcpp::export]]
-NumericVector
-fast_intersection_cpp(const IntegerVector rows, const IntegerVector cols,
-                      NumericVector values, const IntegerVector target,
-                      double unknown_dist = 1.0, double far_dist = 5.0) {
-  double ex_unknown = std::exp(-unknown_dist);
-  double ex_far = std::exp(-far_dist);
+NumericVector fast_intersection_cpp(IntegerVector rows, IntegerVector cols,
+                                    NumericVector values, IntegerVector target,
+                                    double unknown_dist = 1.0,
+                                    double far_dist = 5.0) {
+  auto result = as<std::vector<double>>(values);
 
-  auto len = values.length();
+  uwot::fast_intersection(
+      as<std::vector<int>>(rows), as<std::vector<int>>(cols), result,
+      as<std::vector<int>>(target), unknown_dist, far_dist, NA_INTEGER);
 
-  for (auto nz = 0; nz < len; ++nz) {
-    auto i = rows[nz];
-    auto j = cols[nz];
-    if (IntegerVector::is_na(target[i]) || IntegerVector::is_na(target[j])) {
-      values[nz] = values[nz] * ex_unknown;
-    } else if (target[i] != target[j]) {
-      values[nz] = values[nz] * ex_far;
-    }
-  }
-
-  return values;
+  return wrap(result);
 }
 
 // [[Rcpp::export]]
 NumericVector general_sset_intersection_cpp(
-    const IntegerVector indptr1, const IntegerVector indices1,
-    NumericVector data1, const IntegerVector indptr2,
-    const IntegerVector indices2, NumericVector data2,
-    const IntegerVector result_row, const IntegerVector result_col,
+    IntegerVector indptr1, IntegerVector indices1, NumericVector data1,
+    IntegerVector indptr2, IntegerVector indices2, NumericVector data2,
+    IntegerVector result_row, IntegerVector result_col,
     NumericVector result_val, double mix_weight = 0.5) {
 
-  double left_min = std::max(Rcpp::min(data1) / 2.0, 1.0e-8);
-  double right_min = std::max(Rcpp::min(data2) / 2.0, 1.0e-8);
+  double left_min = (std::max)(min(data1) / 2.0, 1.0e-8);
+  double right_min = (std::max)(min(data2) / 2.0, 1.0e-8);
 
   for (auto idx = 0; idx < result_row.length(); idx++) {
     auto i = result_col[idx];

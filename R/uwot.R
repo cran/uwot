@@ -5,6 +5,9 @@
 #' the following help text is lifted verbatim from the Python reference
 #' implementation at \url{https://github.com/lmcinnes/umap}.
 #'
+#' Note that the \code{grain_size} parameter no longer does anything and is
+#' present to avoid break backwards compatibility only.
+#'
 #' @param X Input data. Can be a \code{\link{data.frame}}, \code{\link{matrix}},
 #'   \code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}. A
 #'   sparse matrix is interpreted as a distance matrix and both implicit and
@@ -61,8 +64,10 @@
 #' PCA applied to both, but with centering applied only to the real-valued data
 #' (it is typical not to apply centering to binary data before PCA is applied).
 #' @param n_epochs Number of epochs to use during the optimization of the
-#'   embedded coordinates. By default, this value is set to \code{500} for datasets
-#'   containing 10,000 vertices or less, and \code{200} otherwise.
+#'   embedded coordinates. By default, this value is set to \code{500} for
+#'   datasets containing 10,000 vertices or less, and \code{200} otherwise.
+#'   If \code{n_epochs = 0}, then coordinates determined by \code{"init"} will
+#'   be returned.
 #' @param scale Scaling to apply to \code{X} if it is a data frame or matrix:
 #' \itemize{
 #'   \item{\code{"none"} or \code{FALSE} or \code{NULL}} No scaling.
@@ -266,12 +271,12 @@
 #'   add new data to an existing embedding via \code{\link{umap_transform}}. The
 #'   embedded coordinates are returned as the list item \code{embedding}. If
 #'   \code{FALSE}, just return the coordinates. This parameter can be used in
-#'   conjunction with \code{ret_nn}. Note that some settings are incompatible
-#'   with the production of a UMAP model: external neighbor data (passed via a
-#'   list to \code{nn_method}), and factor columns that were included
-#'   via the \code{metric} parameter. In the latter case, the model produced is
-#'   based only on the numeric data. A transformation using new data is
-#'   possible, but the factor columns in the new data are ignored.
+#'   conjunction with \code{ret_nn} and \code{ret_extra}. Note that some
+#'   settings are incompatible with the production of a UMAP model: external
+#'   neighbor data (passed via a list to \code{nn_method}), and factor columns
+#'   that were included via the \code{metric} parameter. In the latter case, the
+#'   model produced is based only on the numeric data. A transformation using
+#'   new data is possible, but the factor columns in the new data are ignored.
 #' @param ret_nn If \code{TRUE}, then in addition to the embedding, also return
 #'   nearest neighbor data that can be used as input to \code{nn_method} to
 #'   avoid the overhead of repeatedly calculating the nearest neighbors when
@@ -280,20 +285,43 @@
 #'   \code{FALSE}, just return the coordinates. Note that the nearest neighbors
 #'   could be sensitive to data scaling, so be wary of reusing nearest neighbor
 #'   data if modifying the \code{scale} parameter. This parameter can be used in
-#'   conjunction with \code{ret_model}.
+#'   conjunction with \code{ret_model} and \code{ret_extra}.
+#' @param ret_extra A vector indicating what extra data to return. May contain
+#'   any combination of the following strings:
+#'   \itemize{
+#'     \item \code{"model"} Same as setting `ret_model = TRUE`.
+#'     \item \code{"nn"} Same as setting `ret_nn = TRUE`.
+#'     \item \code{"fgraph"} the high dimensional fuzzy graph (i.e. the fuzzy
+#'       simplicial set of the merged local views of the input data). The graph
+#'       is returned as a sparse symmetric N x N matrix of class
+#'       \link[Matrix]{dgCMatrix-class}, where a non-zero entry (i, j) gives the
+#'       membership strength of the edge connecting vertex i and vertex j. This
+#'       can be considered analogous to the input probability (or similarity or
+#'       affinity) used in t-SNE and LargeVis. Note that the graph is further
+#'       sparsified by removing edges with sufficiently low membership strength
+#'       that they would not be sampled by the probabilistic edge sampling
+#'       employed for optimization and therefore the number of non-zero elements
+#'       in the matrix is dependent on \code{n_epochs}. If you are only
+#'       interested in the fuzzy input graph (e.g. for clustering), setting
+#'       `n_epochs = 0` will avoid any further sparsifying.
+#'   }
 #' @param n_threads Number of threads to use (except during stochastic gradient
-#'   descent). Default is half that recommended by RcppParallel. For
-#'   nearest neighbor search, only applies if \code{nn_method = "annoy"}. If
-#'   \code{n_threads > 1}, then the Annoy index will be temporarily written to
-#'   disk in the location determined by \code{\link[base]{tempfile}}.
+#'   descent). Default is half the number of concurrent threads supported by the
+#'   system. For nearest neighbor search, only applies if 
+#'   \code{nn_method = "annoy"}. If \code{n_threads > 1}, then the Annoy index 
+#'   will be temporarily written to disk in the location determined by
+#'   \code{\link[base]{tempfile}}.
 #' @param n_sgd_threads Number of threads to use during stochastic gradient
 #'   descent. If set to > 1, then results will not be reproducible, even if
 #'   `set.seed` is called with a fixed seed before running. Set to
 #'   \code{"auto"} go use the same value as \code{n_threads}.
-#' @param grain_size Minimum batch size for multithreading. If the number of
-#'   items to process in a thread falls below this number, then no threads will
-#'   be used. Used in conjunction with \code{n_threads} and
-#'   \code{n_sgd_threads}.
+#' @param grain_size The minimum amount of work to do on each thread. If this
+#'   value is set high enough, then less than \code{n_threads} or
+#'   \code{n_sgd_threads} will be used for processing, which might give a
+#'   performance improvement if the overhead of thread management and context
+#'   switching was outweighing the improvement due to concurrent processing.
+#'   This should be left at default (\code{1}) and work will be spread evenly
+#'   over all the threads specified.
 #' @param tmpdir Temporary directory to store nearest neighbor indexes during
 #'   nearest neighbor search. Default is \code{\link{tempdir}}. The index is
 #'   only written to disk if \code{n_threads > 1} and
@@ -301,67 +329,48 @@
 #' @param verbose If \code{TRUE}, log details to the console.
 #' @return A matrix of optimized coordinates, or:
 #'   \itemize{
-#'     \item if \code{ret_model = TRUE}, returns a
-#'     list containing extra information that can be used to add new data to an
-#'     existing embedding via \code{\link{umap_transform}}. In this case, the
-#'     coordinates are available in the list item \code{embedding}.
-#'     \item if \code{ret_nn = TRUE}, returns the nearest neighbor data as a
-#'     list called \code{nn}. This contains one list for each \code{metric}
-#'     calculated, itself containing a matrix \code{idx} with the integer ids of
-#'     the neighbors; and a matrix \code{dist} with the distances. The \code{nn}
-#'     list (or a sub-list) can be used as input to the \code{nn_method}
-#'     parameter.
+#'     \item if \code{ret_model = TRUE} (or \code{ret_extra} contains
+#'     \code{"model"}), returns a list containing extra information that can be
+#'     used to add new data to an existing embedding via
+#'     \code{\link{umap_transform}}. In this case, the coordinates are available
+#'     in the list item \code{embedding}.
+#'     \item if \code{ret_nn = TRUE} (or \code{ret_extra} contains \code{"nn"}),
+#'     returns the nearest neighbor data as a list called \code{nn}. This
+#'     contains one list for each \code{metric} calculated, itself containing a
+#'     matrix \code{idx} with the integer ids of the neighbors; and a matrix
+#'     \code{dist} with the distances. The \code{nn} list (or a sub-list) can be
+#'     used as input to the \code{nn_method} parameter.
+#'     \item if \code{ret_extra} contains \code{"fgraph"} returns the high
+#'     dimensional fuzzy graph as a sparse matrix called \code{fgraph}, of type
+#'     \link[Matrix]{dgCMatrix-class}.
 #'   }
-#'   Both \code{ret_model} and \code{ret_nn} can be \code{TRUE}, in which case
-#'   the returned list contains the combined data.
+#'   The returned list contains the combined data from any combination of
+#'   specifying \code{ret_model}, \code{ret_nn} and \code{ret_extra}.
 #' @examples
+#' 
+#' iris30 <- iris[c(1:10, 51:60, 101:110), ]
+#' 
 #' # Non-numeric columns are automatically removed so you can pass data frames
 #' # directly in a lot of cases without pre-processing
-#' iris_umap <- umap(iris,
-#'   n_neighbors = 50, learning_rate = 0.5,
-#'   init = "random"
-#' )
+#' iris_umap <- umap(iris30, n_neighbors = 5, learning_rate = 0.5, init = "random", n_epochs = 20)
 #'
-#' # Although not an issue for the iris dataset, for high dimensional data
-#' # (> 100 columns), using PCA to reduce dimensionality is highly
-#' # recommended to avoid nearest neighbor searches taking a long time
-#' # 50 dimensions is a good value to start with. If there are fewer columns
-#' # in the input than the requested number of components, the parameter is
-#' # ignored.
-#' iris_umap <- umap(iris, pca = 50)
-#'
-#' # Faster approximation to the gradient
-#' iris_umap <- umap(iris, n_neighbors = 15, approx_pow = TRUE)
+#' # Faster approximation to the gradient and return nearest neighbors
+#' iris_umap <- umap(iris30, n_neighbors = 5, approx_pow = TRUE, ret_nn = TRUE, n_epochs = 20)
 #'
 #' # Can specify min_dist and spread parameters to control separation and size
-#' # of clusters
-#' iris_umap <- umap(iris, n_neighbors = 15, min_dist = 1, spread = 5)
+#' # of clusters and reuse nearest neighbors for efficiency
+#' nn <- iris_umap$nn
+#' iris_umap <- umap(iris30, n_neighbors = 5, min_dist = 1, spread = 5, nn_method = nn, n_epochs = 20)
 #'
 #' # Supervised dimension reduction using the 'Species' factor column
-#' iris_sumap <- umap(iris,
-#'   n_neighbors = 15, min_dist = 0.001,
-#'   y = iris$Species, target_weight = 0.5
-#' )
-#' \donttest{
+#' iris_sumap <- umap(iris30, n_neighbors = 5, min_dist = 0.001, y = iris30$Species, 
+#'                    target_weight = 0.5, n_epochs = 20)
+#'
 #' # Calculate Petal and Sepal neighbors separately (uses intersection of the resulting sets):
-#' iris_umap <- umap(iris, metric = list(
+#' iris_umap <- umap(iris30, metric = list(
 #'   "euclidean" = c("Sepal.Length", "Sepal.Width"),
 #'   "euclidean" = c("Petal.Length", "Petal.Width")
 #' ))
-#'
-#' # Can also use individual factor columns
-#' iris_umap <- umap(iris, metric = list(
-#'   "euclidean" = c("Sepal.Length", "Sepal.Width"),
-#'   "euclidean" = c("Petal.Length", "Petal.Width"),
-#'   "categorical" = "Species"
-#' ))
-#' # Return NN info
-#' iris_umap <- umap(iris, ret_nn = TRUE)
-#'
-#' # Re-use NN info for greater efficiency
-#' # Here we use random initialization
-#' iris_umap_spca <- umap(iris, init = "rand", nn_method = iris_umap$nn)
-#' }
 #'
 #' @references
 #' Belkin, M., & Niyogi, P. (2002).
@@ -408,8 +417,8 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                  pca = NULL, pca_center = TRUE,
                  pcg_rand = TRUE,
                  fast_sgd = FALSE,
-                 ret_model = FALSE, ret_nn = FALSE,
-                 n_threads = max(1, RcppParallel::defaultNumThreads() / 2),
+                 ret_model = FALSE, ret_nn = FALSE, ret_extra = c(),
+                 n_threads = NULL,
                  n_sgd_threads = 0,
                  grain_size = 1,
                  tmpdir = tempdir(),
@@ -432,7 +441,9 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     pca = pca, pca_center = pca_center,
     pcg_rand = pcg_rand,
     fast_sgd = fast_sgd,
-    ret_model = ret_model, ret_nn = ret_nn,
+    ret_model = ret_model || "model" %in% ret_extra,
+    ret_nn = ret_nn || "nn" %in% ret_extra,
+    ret_fgraph = "fgraph" %in% ret_extra,
     tmpdir = tempdir(),
     verbose = verbose
   )
@@ -447,6 +458,9 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' get back the Cauchy distribution as used in t-SNE and LargeVis. It also
 #' results in a substantially simplified gradient expression. This can give
 #' a speed improvement of around 50\%.
+#' 
+#' Note that the \code{grain_size} parameter no longer does anything and is
+#' present to avoid break backwards compatibility only.
 #'
 #' @param X Input data. Can be a \code{\link{data.frame}}, \code{\link{matrix}},
 #'   \code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}. A
@@ -504,8 +518,10 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' PCA applied to both, but with centering applied only to the real-valued data
 #' (it is typical not to apply centering to binary data before PCA is applied).
 #' @param n_epochs Number of epochs to use during the optimization of the
-#'   embedded coordinates. By default, this value is set to \code{500} for datasets
-#'   containing 10,000 vertices or less, and \code{200} otherwise.
+#'   embedded coordinates. By default, this value is set to \code{500} for
+#'   datasets containing 10,000 vertices or less, and \code{200} otherwise.
+#'   If \code{n_epochs = 0}, then coordinates determined by \code{"init"} will
+#'   be returned.
 #' @param learning_rate Initial learning rate used in optimization of the
 #'   coordinates.
 #' @param scale Scaling to apply to \code{X} if it is a data frame or matrix:
@@ -690,12 +706,12 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   add new data to an existing embedding via \code{\link{umap_transform}}. The
 #'   embedded coordinates are returned as the list item \code{embedding}. If
 #'   \code{FALSE}, just return the coordinates. This parameter can be used in
-#'   conjunction with \code{ret_nn}. Note that some settings are incompatible
-#'   with the production of a UMAP model: external neighbor data (passed via a
-#'   list to \code{nn_method}), and factor columns that were included
-#'   via the \code{metric} parameter. In the latter case, the model produced is
-#'   based only on the numeric data. A transformation using new data is
-#'   possible, but the factor columns in the new data are ignored.
+#'   conjunction with \code{ret_nn} and \code{ret_extra}. Note that some
+#'   settings are incompatible with the production of a UMAP model: external
+#'   neighbor data (passed via a list to \code{nn_method}), and factor columns
+#'   that were included via the \code{metric} parameter. In the latter case, the
+#'   model produced is based only on the numeric data. A transformation using
+#'   new data is possible, but the factor columns in the new data are ignored.
 #' @param ret_nn If \code{TRUE}, then in addition to the embedding, also return
 #'   nearest neighbor data that can be used as input to \code{nn_method} to
 #'   avoid the overhead of repeatedly calculating the nearest neighbors when
@@ -704,20 +720,43 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   \code{FALSE}, just return the coordinates. Note that the nearest neighbors
 #'   could be sensitive to data scaling, so be wary of reusing nearest neighbor
 #'   data if modifying the \code{scale} parameter. This parameter can be used in
-#'   conjunction with \code{ret_model}.
+#'   conjunction with \code{ret_model} and \code{ret_extra}.
+#' @param ret_extra A vector indicating what extra data to return. May contain
+#'   any combination of the following strings:
+#'   \itemize{
+#'     \item \code{"model"} Same as setting `ret_model = TRUE`.
+#'     \item \code{"nn"} Same as setting `ret_nn = TRUE`.
+#'     \item \code{"fgraph"} the high dimensional fuzzy graph (i.e. the fuzzy
+#'       simplicial set of the merged local views of the input data). The graph
+#'       is returned as a sparse symmetric N x N matrix of class
+#'       \link[Matrix]{dgCMatrix-class}, where a non-zero entry (i, j) gives the
+#'       membership strength of the edge connecting vertex i and vertex j. This
+#'       can be considered analogous to the input probability (or similarity or
+#'       affinity) used in t-SNE and LargeVis. Note that the graph is further
+#'       sparsified by removing edges with sufficiently low membership strength
+#'       that they would not be sampled by the probabilistic edge sampling
+#'       employed for optimization and therefore the number of non-zero elements
+#'       in the matrix is dependent on \code{n_epochs}. If you are only
+#'       interested in the fuzzy input graph (e.g. for clustering), setting
+#'       `n_epochs = 0` will avoid any further sparsifying.
+#'   }
 #' @param n_threads Number of threads to use (except during stochastic gradient
-#'   descent). Default is half that recommended by RcppParallel. For
-#'   nearest neighbor search, only applies if \code{nn_method = "annoy"}. If
-#'   \code{n_threads > 1}, then the Annoy index will be temporarily written to
-#'   disk in the location determined by \code{\link[base]{tempfile}}.
+#'   descent). Default is half the number of concurrent threads supported by the
+#'   system. For nearest neighbor search, only applies if 
+#'   \code{nn_method = "annoy"}. If \code{n_threads > 1}, then the Annoy index 
+#'   will be temporarily written to disk in the location determined by
+#'   \code{\link[base]{tempfile}}.
 #' @param n_sgd_threads Number of threads to use during stochastic gradient
 #'   descent. If set to > 1, then results will not be reproducible, even if
 #'   `set.seed` is called with a fixed seed before running. Set to
 #'   \code{"auto"} go use the same value as \code{n_threads}.
-#' @param grain_size Minimum batch size for multithreading. If the number of
-#'   items to process in a thread falls below this number, then no threads will
-#'   be used. Used in conjunction with \code{n_threads} and
-#'   \code{n_sgd_threads}.
+#' @param grain_size The minimum amount of work to do on each thread. If this
+#'   value is set high enough, then less than \code{n_threads} or
+#'   \code{n_sgd_threads} will be used for processing, which might give a
+#'   performance improvement if the overhead of thread management and context
+#'   switching was outweighing the improvement due to concurrent processing.
+#'   This should be left at default (\code{1}) and work will be spread evenly
+#'   over all the threads specified.
 #' @param tmpdir Temporary directory to store nearest neighbor indexes during
 #'   nearest neighbor search. Default is \code{\link{tempdir}}. The index is
 #'   only written to disk if \code{n_threads > 1} and
@@ -725,20 +764,23 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' @param verbose If \code{TRUE}, log details to the console.
 #' @return A matrix of optimized coordinates, or:
 #'   \itemize{
-#'     \item if \code{ret_model = TRUE}, returns a
-#'     list containing extra information that can be used to add new data to an
-#'     existing embedding via \code{\link{umap_transform}}. In this case, the
-#'     coordinates are available in the list item \code{embedding}.
-#'     \item if \code{ret_nn = TRUE}, returns the nearest neighbor data as a
-#'     list called \code{nn}. This contains one list for each \code{metric}
-#'     calculated, itself containing a matrix \code{idx} with the integer ids of
-#'     the neighbors; and a matrix \code{dist} with the distances. The \code{nn}
-#'     list (or a sub-list) can be used as input to the \code{nn_method}
-#'     parameter.
+#'     \item if \code{ret_model = TRUE} (or \code{ret_extra} contains
+#'     \code{"model"}), returns a list containing extra information that can be
+#'     used to add new data to an existing embedding via
+#'     \code{\link{umap_transform}}. In this case, the coordinates are available
+#'     in the list item \code{embedding}.
+#'     \item if \code{ret_nn = TRUE} (or \code{ret_extra} contains \code{"nn"}),
+#'     returns the nearest neighbor data as a list called \code{nn}. This
+#'     contains one list for each \code{metric} calculated, itself containing a
+#'     matrix \code{idx} with the integer ids of the neighbors; and a matrix
+#'     \code{dist} with the distances. The \code{nn} list (or a sub-list) can be
+#'     used as input to the \code{nn_method} parameter.
+#'     \item if \code{ret_extra} contains \code{"fgraph"} returns the high
+#'     dimensional fuzzy graph as a sparse matrix called \code{fgraph}, of type
+#'     \link[Matrix]{dgCMatrix-class}.
 #'   }
-#'   Both \code{ret_model} and \code{ret_nn} can be \code{TRUE}, in which case
-#'   the returned list contains the combined data.
-#'
+#'   The returned list contains the combined data from any combination of
+#'   specifying \code{ret_model}, \code{ret_nn} and \code{ret_extra}.
 #' @examples
 #' iris_tumap <- tumap(iris, n_neighbors = 50, learning_rate = 0.5)
 #' @export
@@ -751,7 +793,7 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                   negative_sample_rate = 5.0,
                   nn_method = NULL, n_trees = 50,
                   search_k = 2 * n_neighbors * n_trees,
-                  n_threads = max(1, RcppParallel::defaultNumThreads() / 2),
+                  n_threads = NULL,
                   n_sgd_threads = 0,
                   grain_size = 1,
                   y = NULL, target_n_neighbors = n_neighbors,
@@ -760,7 +802,7 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                   pca = NULL, pca_center = TRUE,
                   pcg_rand = TRUE,
                   fast_sgd = FALSE,
-                  ret_model = FALSE, ret_nn = FALSE,
+                  ret_model = FALSE, ret_nn = FALSE, ret_extra = c(),
                   tmpdir = tempdir(),
                   verbose = getOption("verbose", TRUE)) {
   uwot(
@@ -781,7 +823,9 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     pca = pca, pca_center = pca_center,
     pcg_rand = pcg_rand,
     fast_sgd = fast_sgd,
-    ret_model = ret_model, ret_nn = ret_nn,
+    ret_model = ret_model || "model" %in% ret_extra,
+    ret_nn = ret_nn || "nn" %in% ret_extra,
+    ret_fgraph = "fgraph" %in% ret_extra,
     tmpdir = tmpdir,
     verbose = verbose
   )
@@ -811,6 +855,9 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   \code{\link{umap}}, but may need to be increased further depending on your
 #'   dataset. Using \code{init = "spectral"} can help.
 #' }
+#'
+#' Note that the \code{grain_size} parameter no longer does anything and is
+#' present to avoid break backwards compatibility only.
 #'
 #' @param X Input data. Can be a \code{\link{data.frame}}, \code{\link{matrix}},
 #'   \code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}. A
@@ -872,7 +919,8 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   embedded coordinates. The default is calculate the number of epochs
 #'   dynamically based on dataset size, to give the same number of edge samples
 #'   as the LargeVis defaults. This is usually substantially larger than the
-#'   UMAP defaults.
+#'   UMAP defaults. If \code{n_epochs = 0}, then coordinates determined by
+#'   \code{"init"} will be returned.
 #' @param learning_rate Initial learning rate used in optimization of the
 #'   coordinates.
 #' @param scale Scaling to apply to \code{X} if it is a data frame or matrix:
@@ -974,18 +1022,22 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   With \code{n_trees}, determines the accuracy of the Annoy nearest neighbor
 #'   search. Only used if the \code{nn_method} is \code{"annoy"}.
 #' @param n_threads Number of threads to use (except during stochastic gradient
-#'   descent). Default is half that recommended by RcppParallel. For
-#'   nearest neighbor search, only applies if \code{nn_method = "annoy"}. If
-#'   \code{n_threads > 1}, then the Annoy index will be temporarily written to
-#'   disk in the location determined by \code{\link[base]{tempfile}}.
+#'   descent). Default is half the number of concurrent threads supported by the
+#'   system. For nearest neighbor search, only applies if 
+#'   \code{nn_method = "annoy"}. If \code{n_threads > 1}, then the Annoy index 
+#'   will be temporarily written to disk in the location determined by
+#'   \code{\link[base]{tempfile}}.
 #' @param n_sgd_threads Number of threads to use during stochastic gradient
 #'   descent. If set to > 1, then results will not be reproducible, even if
 #'   `set.seed` is called with a fixed seed before running. Set to
 #'   \code{"auto"} go use the same value as \code{n_threads}.
-#' @param grain_size Minimum batch size for multithreading. If the number of
-#'   items to process in a thread falls below this number, then no threads will
-#'   be used. Used in conjunction with \code{n_threads} and
-#'   \code{n_sgd_threads}.
+#' @param grain_size The minimum amount of work to do on each thread. If this
+#'   value is set high enough, then less than \code{n_threads} or
+#'   \code{n_sgd_threads} will be used for processing, which might give a
+#'   performance improvement if the overhead of thread management and context
+#'   switching was outweighing the improvement due to concurrent processing.
+#'   This should be left at default (\code{1}) and work will be spread evenly
+#'   over all the threads specified.
 #' @param kernel Type of kernel function to create input probabilities. Can be
 #'   one of \code{"gauss"} (the default) or \code{"knn"}. \code{"gauss"} uses
 #'   the usual Gaussian weighted similarities. \code{"knn"} assigns equal
@@ -1026,16 +1078,41 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   \code{FALSE}, just return the coordinates. Note that the nearest neighbors
 #'   could be sensitive to data scaling, so be wary of reusing nearest neighbor
 #'   data if modifying the \code{scale} parameter.
+#' @param ret_extra A vector indicating what extra data to return. May contain
+#'   any combination of the following strings:
+#'   \itemize{
+#'     \item \code{"nn"} same as setting `ret_nn = TRUE`.
+#'     \item \code{"P"} the high dimensional probability matrix. The graph
+#'     is returned as a sparse symmetric N x N matrix of class
+#'     \link[Matrix]{dgCMatrix-class}, where a non-zero entry (i, j) gives the
+#'     input probability (or similarity or affinity) of the edge connecting
+#'     vertex i and vertex j. Note that the graph is further sparsified by
+#'     removing edges with sufficiently low membership strength that they would
+#'     not be sampled by the probabilistic edge sampling employed for
+#'     optimization and therefore the number of non-zero elements in the matrix
+#'     is dependent on \code{n_epochs}. If you are only interested in the fuzzy
+#'     input graph (e.g. for clustering), setting `n_epochs = 0` will avoid any
+#'     further sparsifying.
+#'   }
 #' @param tmpdir Temporary directory to store nearest neighbor indexes during
 #'   nearest neighbor search. Default is \code{\link{tempdir}}. The index is
 #'   only written to disk if \code{n_threads > 1} and
 #'   \code{nn_method = "annoy"}; otherwise, this parameter is ignored.
 #' @param verbose If \code{TRUE}, log details to the console.
-#' @return A matrix of optimized coordinates, or if \code{ret_nn = TRUE},
-#'   returns the nearest neighbor data as a list containing a matrix \code{idx}
-#'   with the integer ids of the neighbors; and a matrix \code{dist} with the
-#'   distances. This list can be used as input to the \code{nn_method}
-#'   parameter.
+#' @return A matrix of optimized coordinates, or:
+#'   \itemize{
+#'     \item if \code{ret_nn = TRUE} (or \code{ret_extra} contains \code{"nn"}),
+#'     returns the nearest neighbor data as a list called \code{nn}. This
+#'     contains one list for each \code{metric} calculated, itself containing a
+#'     matrix \code{idx} with the integer ids of the neighbors; and a matrix
+#'     \code{dist} with the distances. The \code{nn} list (or a sub-list) can be
+#'     used as input to the \code{nn_method} parameter.
+#'     \item if \code{ret_extra} contains \code{"P"}, returns the high
+#'     dimensional probability matrix as a sparse matrix called \code{P}, of
+#'     type \link[Matrix]{dgCMatrix-class}.
+#'   }
+#'   The returned list contains the combined data from any combination of
+#'   specifying \code{ret_nn} and \code{ret_extra}.
 #' @references
 #' Tang, J., Liu, J., Zhang, M., & Mei, Q. (2016, April).
 #' Visualizing large-scale and high-dimensional data.
@@ -1046,19 +1123,12 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'
 #' @examples
 #' # Default number of epochs is much larger than for UMAP, assumes random
+#' # initialization. Use perplexity rather than n_neighbors to control the size
+#' # of the local neighborhood 20 epochs may be too small for a random 
 #' # initialization
-#' # If using a more global initialization, can use fewer epochs
-#' iris_lvish_short <- lvish(iris,
-#'   perplexity = 50, n_epochs = 200,
-#'   init = "pca"
-#' )
-#'
-#' # Use perplexity rather than n_neighbors to control the size of the local
-#' # neighborhood
-#' # 200 epochs may be too small for a random initialization
 #' iris_lvish <- lvish(iris,
 #'   perplexity = 50, learning_rate = 0.5,
-#'   init = "random", n_epochs = 200
+#'   init = "random", n_epochs = 20
 #' )
 #' @export
 lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
@@ -1069,14 +1139,14 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
                   negative_sample_rate = 5.0,
                   nn_method = NULL, n_trees = 50,
                   search_k = 2 * n_neighbors * n_trees,
-                  n_threads = max(1, RcppParallel::defaultNumThreads() / 2),
+                  n_threads = NULL,
                   n_sgd_threads = 0,
                   grain_size = 1,
                   kernel = "gauss",
                   pca = NULL, pca_center = TRUE,
                   pcg_rand = TRUE,
                   fast_sgd = FALSE,
-                  ret_nn = FALSE,
+                  ret_nn = FALSE, ret_extra = c(),
                   tmpdir = tempdir(),
                   verbose = getOption("verbose", TRUE)) {
   uwot(X,
@@ -1092,7 +1162,8 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
     n_threads = n_threads, n_sgd_threads = n_sgd_threads,
     grain_size = grain_size,
     kernel = kernel,
-    ret_nn = ret_nn,
+    ret_nn = ret_nn || "nn" %in% ret_extra,
+    ret_fgraph = "P" %in% ret_extra,
     pcg_rand = pcg_rand,
     fast_sgd = fast_sgd,
     tmpdir = tmpdir,
@@ -1116,16 +1187,19 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                  y = NULL, target_n_neighbors = n_neighbors,
                  target_metric = "euclidean",
                  target_weight = 0.5,
-                 n_threads = max(1, RcppParallel::defaultNumThreads() / 2),
+                 n_threads = NULL,
                  n_sgd_threads = 0,
                  grain_size = 1,
                  kernel = "gauss",
-                 ret_model = FALSE, ret_nn = FALSE,
+                 ret_model = FALSE, ret_nn = FALSE, ret_fgraph = FALSE,
                  pca = NULL, pca_center = TRUE,
                  pcg_rand = TRUE,
                  fast_sgd = FALSE,
                  tmpdir = tempdir(),
                  verbose = getOption("verbose", TRUE)) {
+  if (is.null(n_threads)) {
+    n_threads <- default_num_threads()
+  }
   if (method == "umap" && (is.null(a) || is.null(b))) {
     ab_res <- find_ab_params(spread = spread, min_dist = min_dist)
     a <- ab_res[1]
@@ -1184,9 +1258,6 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
   if (n_sgd_threads %% 1 != 0) {
     n_sgd_threads <- round(n_sgd_threads)
     tsmessage("Non-integer 'n_sgd_threads' provided. Setting to ", n_sgd_threads)
-  }
-  if (n_threads > 0) {
-    RcppParallel::setThreadOptions(numThreads = n_threads)
   }
 
   # Store categorical columns to be used to generate the graph
@@ -1414,10 +1485,15 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 
   if (methods::is(init, "matrix")) {
     if (nrow(init) != n_vertices || ncol(init) != n_components) {
-      stop("init matrix does not match necessary configuration for X")
+      stop("init matrix does not match necessary configuration for X: ", "should
+           have dimensions (", n_vertices, ", ", n_components, ")")
     }
     tsmessage("Initializing from user-supplied matrix")
     embedding <- init
+  }
+  else if (!(methods::is(init, "character") && length(init) == 1)) {
+    stop("init should be either a matrix or string describing the ",
+         "initialization method")
   }
   else {
     init <- match.arg(tolower(init), c(
@@ -1481,7 +1557,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     }
   }
 
-  if (is.null(n_epochs) || n_epochs <= 0) {
+  if (is.null(n_epochs) || n_epochs < 0) {
     if (method == "largevis") {
       n_epochs <- lvish_epochs(n_vertices, V)
     }
@@ -1495,94 +1571,90 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     }
   }
 
-  V@x[V@x < max(V@x) / n_epochs] <- 0
-  V <- Matrix::drop0(V)
-  epochs_per_sample <- make_epochs_per_sample(V@x, n_epochs)
+  if (n_epochs > 0) {
+    V@x[V@x < max(V@x) / n_epochs] <- 0
+    V <- Matrix::drop0(V)
 
-  positive_head <- V@i
-  positive_tail <- Matrix::which(V != 0, arr.ind = TRUE)[, 2] - 1
+    epochs_per_sample <- make_epochs_per_sample(V@x, n_epochs)
 
-  tsmessage(
-    "Commencing optimization for ", n_epochs, " epochs, with ",
-    length(positive_head), " positive edges",
-    pluralize("thread", n_sgd_threads, " using")
-  )
+    positive_head <- V@i
+    positive_tail <- Matrix::which(V != 0, arr.ind = TRUE)[, 2] - 1
 
-  parallelize <- n_sgd_threads > 0
-  if (n_sgd_threads > 0) {
-    RcppParallel::setThreadOptions(numThreads = n_sgd_threads)
-  }
-
-  embedding <- t(embedding)
-  if (tolower(method) == "umap") {
-    embedding <- optimize_layout_umap(
-      head_embedding = embedding,
-      tail_embedding = NULL,
-      positive_head = positive_head,
-      positive_tail = positive_tail,
-      n_epochs = n_epochs,
-      n_vertices = n_vertices,
-      epochs_per_sample = epochs_per_sample,
-      a = a, b = b, gamma = gamma,
-      initial_alpha = alpha, negative_sample_rate,
-      approx_pow = approx_pow,
-      pcg_rand = pcg_rand,
-      parallelize = parallelize,
-      grain_size = grain_size,
-      move_other = TRUE,
-      verbose = verbose
+    tsmessage(
+      "Commencing optimization for ", n_epochs, " epochs, with ",
+      length(positive_head), " positive edges",
+      pluralize("thread", n_sgd_threads, " using")
     )
-  }
-  else if (method == "tumap") {
-    embedding <- optimize_layout_tumap(
-      head_embedding = embedding,
-      tail_embedding = NULL,
-      positive_head = positive_head,
-      positive_tail = positive_tail,
-      n_epochs = n_epochs,
-      n_vertices = n_vertices,
-      epochs_per_sample = epochs_per_sample,
-      initial_alpha = alpha,
-      negative_sample_rate = negative_sample_rate,
-      pcg_rand = pcg_rand,
-      parallelize = parallelize,
-      grain_size = grain_size,
-      move_other = TRUE,
-      verbose = verbose
-    )
-  }
-  else {
-    embedding <- optimize_layout_largevis(
-      head_embedding = embedding,
-      positive_head = positive_head,
-      positive_tail = positive_tail,
-      n_epochs = n_epochs,
-      n_vertices = n_vertices,
-      epochs_per_sample = epochs_per_sample,
-      gamma = gamma,
-      initial_alpha = alpha,
-      negative_sample_rate = negative_sample_rate,
-      pcg_rand = pcg_rand,
-      parallelize = parallelize,
-      grain_size = grain_size,
-      verbose = verbose
-    )
-  }
-  embedding <- t(embedding)
-  gc()
-  # Center the points before returning
-  embedding <- scale(embedding, center = TRUE, scale = FALSE)
-  tsmessage("Optimization finished")
 
-  if (ret_model || ret_nn) {
+    embedding <- t(embedding)
+    if (tolower(method) == "umap") {
+      embedding <- optimize_layout_umap(
+        head_embedding = embedding,
+        tail_embedding = NULL,
+        positive_head = positive_head,
+        positive_tail = positive_tail,
+        n_epochs = n_epochs,
+        n_vertices = n_vertices,
+        epochs_per_sample = epochs_per_sample,
+        a = a, b = b, gamma = gamma,
+        initial_alpha = alpha, negative_sample_rate,
+        approx_pow = approx_pow,
+        pcg_rand = pcg_rand,
+        n_threads = n_sgd_threads,
+        grain_size = grain_size,
+        move_other = TRUE,
+        verbose = verbose
+      )
+    }
+    else if (method == "tumap") {
+      embedding <- optimize_layout_tumap(
+        head_embedding = embedding,
+        tail_embedding = NULL,
+        positive_head = positive_head,
+        positive_tail = positive_tail,
+        n_epochs = n_epochs,
+        n_vertices = n_vertices,
+        epochs_per_sample = epochs_per_sample,
+        initial_alpha = alpha,
+        negative_sample_rate = negative_sample_rate,
+        pcg_rand = pcg_rand,
+        n_threads = n_sgd_threads,
+        grain_size = grain_size,
+        move_other = TRUE,
+        verbose = verbose
+      )
+    }
+    else {
+      embedding <- optimize_layout_largevis(
+        head_embedding = embedding,
+        positive_head = positive_head,
+        positive_tail = positive_tail,
+        n_epochs = n_epochs,
+        n_vertices = n_vertices,
+        epochs_per_sample = epochs_per_sample,
+        gamma = gamma,
+        initial_alpha = alpha,
+        negative_sample_rate = negative_sample_rate,
+        pcg_rand = pcg_rand,
+        n_threads = n_sgd_threads,
+        grain_size = grain_size,
+        verbose = verbose
+      )
+    }
+    embedding <- t(embedding)
+    gc()
+    # Center the points before returning
+    embedding <- scale(embedding, center = TRUE, scale = FALSE)
+    tsmessage("Optimization finished")
+  }
+
+  if (ret_model || ret_nn || ret_fgraph) {
     nblocks <- length(nns)
     res <- list(embedding = embedding)
     if (ret_model) {
       res <- append(res, list(
         scale_info = attr_to_scale_info(X),
         n_neighbors = n_neighbors,
-        # Can't use nn descent during transform, so if used in training,
-        # double the Annoy search parameter to compensate
         search_k = search_k,
         local_connectivity = local_connectivity,
         n_epochs = n_epochs,
@@ -1605,6 +1677,15 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       }
       else {
         res$nn_index <- nns[[1]]$index
+        if (is.null(res$metric[[1]])) {
+          # 31: Metric usually lists column indices or names, NULL means use all
+          # of them, but for loading the NN index we need the number of 
+          # columns explicitly (we don't have access to the column dimension of
+          # the input data at load time)
+          # To be sure of the dimensionality, fetch the first item from the 
+          # index and see how many elements are in the returned vector.
+          res$metric[[1]] <- list(ndim = length(res$nn_index$getItemsVector(0)))
+        }
       }
       if (!is.null(pca_models)) {
         res$pca_models <- pca_models
@@ -1616,6 +1697,14 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
         res$nn[[i]] <- list(idx = nns[[i]]$idx, dist = nns[[i]]$dist)
       }
       names(res$nn) <- names(nns)
+    }
+    if (ret_fgraph) {
+      if (method == "largevis") {
+        res$P <- V
+      }
+      else {
+        res$fgraph <- V
+      }
     }
   }
   else {
@@ -1631,65 +1720,122 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'
 #' @param model a UMAP model create by \code{\link{umap}}.
 #' @param file name of the file where the model is to be saved or read from.
-#'
+#' @param unload if \code{TRUE}, unload all nearest neighbor indexes for the
+#'   model. The \code{model} will no longer be valid for use in 
+#'   \code{\link{umap_transform}} and the temporary working directory used 
+#'   during model saving will be deleted. You will need to reload the model
+#'   with `load_uwot` to use the model. If \code{FALSE}, then the model can
+#'   be re-used without reloading, but you must manually unload the NN index 
+#'   when you are finished using it if you want to delete the temporary working
+#'   directory. To unload manually, use \code{\link{unload_uwot}}. The 
+#'   absolute path of the working directory is found in the `mod_dir` item of 
+#'   the return value. 
+#' @param verbose if \code{TRUE}, log information to the console.
+#' @return \code{model} with one extra item: `mod_dir`, which contains the path
+#' to the working directory. If \code{unload = FALSE} then this directory still
+#' exists after this function returns, and can be cleaned up with 
+#' \code{\link{unload_uwot}}. If you don't care about cleaning up this 
+#' directory, or \code{unload = TRUE}, then you can ignore the return value.
 #' @examples
+#' iris_train <- iris[c(1:10, 51:60), ]
+#' iris_test <- iris[100:110, ]
+#' 
 #' # create model
-#' model <- umap(iris[1:100, ], ret_model = TRUE)
-#'
-#' # save
+#' model <- umap(iris_train, ret_model = TRUE, n_epochs = 20)
+#' 
+#' # save without unloading: this leaves behind a temporary working directory
 #' model_file <- tempfile("iris_umap")
-#' save_uwot(model, file = model_file)
-#'
-#' # restore
+#' model <- save_uwot(model, file = model_file)
+#' 
+#' # The model can continue to be used
+#' test_embedding <- umap_transform(iris_test, model)
+#' 
+#' # To manually unload the model from memory when finished and to clean up
+#' # the working directory (this doesn't touch your model file)
+#' unload_uwot(model)
+#' 
+#' # At this point, model cannot be used with umap_transform, this would fail:
+#' # test_embedding2 <- umap_transform(iris_test, model)
+#' 
+#' # restore the model: this also creates a temporary working directory
 #' model2 <- load_uwot(file = model_file)
-#'
-#' identical(model, model2)
-#'
+#' test_embedding2 <- umap_transform(iris_test, model2)
+#' 
+#' # Unload and clean up the loaded model temp directory
+#' unload_uwot(model2)
+#' 
+#' # clean up the model file
 #' unlink(model_file)
+#' 
+#' # save with unloading: this deletes the temporary working directory but
+#' # doesn't allow the model to be re-used
+#' model3 <- umap(iris_train, ret_model = TRUE, n_epochs = 20)
+#' model_file3 <- tempfile("iris_umap")
+#' model3 <- save_uwot(model3, file = model_file3, unload = TRUE)
+#' 
+#' @seealso \code{\link{load_uwot}}, \code{\link{unload_uwot}}
 #' @export
-save_uwot <- function(model, file) {
+save_uwot <- function(model, file, unload = FALSE, verbose = FALSE) {
+  if (!all_nn_indices_are_loaded(model)) {
+    stop("cannot save: NN index is unloaded")
+  }
+  
   wd <- getwd()
+  model_file <- abspath(file)
+  if (file.exists(model_file)) {
+    stop("model file ", model_file, " already exists")    
+  }
+  
   tryCatch(
     {
       # create directory to store files in
       mod_dir <- tempfile(pattern = "dir")
+      tsmessage("Creating temp model dir ", mod_dir)
       dir.create(mod_dir)
+      
+      # create the tempdir/uwot subdirectory
       uwot_dir <- file.path(mod_dir, "uwot")
+      tsmessage("Creating dir ", mod_dir)
       dir.create(uwot_dir)
-
-      # save model
+      
+      # save model file to tempdir/uwot/model
       model_tmpfname <- file.path(uwot_dir, "model")
       saveRDS(model, file = model_tmpfname)
-
-      # save each nn index
+      
+      # save each nn index inside tempdir/uwot/model
       metrics <- names(model$metric)
       n_metrics <- length(metrics)
       for (i in 1:n_metrics) {
         nn_tmpfname <- file.path(uwot_dir, paste0("nn", i))
         if (n_metrics == 1) {
           model$nn_index$save(nn_tmpfname)
-          model$nn_index$unload()
-          model$nn_index$load(nn_tmpfname)
         }
         else {
           model$nn_index[[i]]$save(nn_tmpfname)
-          model$nn_index[[i]]$unload()
-          model$nn_index[[i]]$load(nn_tmpfname)
         }
       }
-
+      
       # archive the files under the temp dir into the single target file
       # change directory so the archive only contains one directory
+      tsmessage("Changing to ", mod_dir)
       setwd(mod_dir)
-      utils::tar(tarfile = file, files = "uwot/")
+      tmp_model_file <- abspath(file)
+      tsmessage("Creating ", tmp_model_file)
+      utils::tar(tarfile = tmp_model_file, files = "uwot/")
     },
     finally = {
       setwd(wd)
-      if (file.exists(mod_dir)) {
-        unlink(mod_dir, recursive = TRUE)
+      if (model_file != tmp_model_file) {
+        tsmessage("Copying ", tmp_model_file, " to ", model_file)
+        file.copy(from = tmp_model_file, to = model_file)
+      }
+      model$mod_dir <- mod_dir
+      if (unload) {
+        unload_uwot(model, cleanup = TRUE, verbose = verbose)
       }
     }
   )
+  model
 }
 
 #' Save or Load a Model
@@ -1697,67 +1843,209 @@ save_uwot <- function(model, file) {
 #' Functions to write a UMAP model to a file, and to restore.
 #'
 #' @param file name of the file where the model is to be saved or read from.
+#' @param verbose if \code{TRUE}, log information to the console.
+#' @return The model saved at \code{file}, for use with 
+#' \code{\link{umap_transform}}. Additionally, it contains an extra item: 
+#' `mod_dir`, which contains the path to the temporary working directory used 
+#' during loading of the model. This directory cannot be removed until this
+#' model has been unloaded by using \code{\link{unload_uwot}}.
+#' @examples
+#' iris_train <- iris[c(1:10, 51:60), ]
+#' iris_test <- iris[100:110, ]
+#' 
+#' # create model
+#' model <- umap(iris_train, ret_model = TRUE, n_epochs = 20)
+#' 
+#' # save without unloading: this leaves behind a temporary working directory
+#' model_file <- tempfile("iris_umap")
+#' model <- save_uwot(model, file = model_file)
+#' 
+#' # The model can continue to be used
+#' test_embedding <- umap_transform(iris_test, model)
+#' 
+#' # To manually unload the model from memory when finished and to clean up
+#' # the working directory (this doesn't touch your model file)
+#' unload_uwot(model)
+#' 
+#' # At this point, model cannot be used with umap_transform, this would fail:
+#' # test_embedding2 <- umap_transform(iris_test, model)
+#' 
+#' # restore the model: this also creates a temporary working directory
+#' model2 <- load_uwot(file = model_file)
+#' test_embedding2 <- umap_transform(iris_test, model2)
+#' 
+#' # Unload and clean up the loaded model temp directory
+#' unload_uwot(model2)
+#' 
+#' # clean up the model file
+#' unlink(model_file)
+#' 
+#' # save with unloading: this deletes the temporary working directory but
+#' # doesn't allow the model to be re-used
+#' model3 <- umap(iris_train, ret_model = TRUE, n_epochs = 20)
+#' model_file3 <- tempfile("iris_umap")
+#' model3 <- save_uwot(model3, file = model_file3, unload = TRUE)
+#' 
+#' @seealso \code{\link{save_uwot}}, \code{\link{unload_uwot}}
+#' @export
+load_uwot <- function(file, verbose = FALSE) {
+  # create directory to store files in
+  mod_dir <- tempfile(pattern = "dir")
+  tsmessage("Creating temp directory ", mod_dir)
+  dir.create(mod_dir)
+  
+  utils::untar(abspath(file), exdir = mod_dir, verbose = verbose)
+  
+  model_fname <- file.path(mod_dir, "uwot/model")
+  if (!file.exists(model_fname)) {
+    stop("Can't find model in ", file)
+  }
+  model <- readRDS(file = model_fname)
+  
+  metrics <- names(model$metric)
+  n_metrics <- length(metrics)
+  
+  for (i in 1:n_metrics) {
+    nn_fname <- file.path(mod_dir, paste0("uwot/nn", i))
+    if (!file.exists(nn_fname)) {
+      stop("Can't find nearest neighbor index ", nn_fname, " in ", file)
+    }
+    metric <- metrics[[i]]
+    # 31: need to specify the index dimensionality when creating the index
+    if (is.list(model$metric[[i]])) {
+      # in case where there is only one metric, the value is a one-item list
+      # named 'ndim' giving the number of dimensions directly: all columns
+      # are used in this metric
+      ndim <- model$metric[[i]]$ndim
+    }
+    else {
+      # otherwise, metric specifies the name or index used for each metric,
+      # so the dimension is the number of them
+      ndim = length(model$metric[[i]])
+    }
+    ann <- create_ann(metric, ndim = ndim)
+    ann$load(nn_fname)
+    if (n_metrics == 1) {
+      model$nn_index <- ann
+    }
+    else {
+      model$nn_index[[i]] <- ann
+    }
+  }
+  model$mod_dir <- mod_dir
+  
+  model
+}
+
+
+#' Unload a Model
+#'
+#' Unloads the UMAP model. This prevents the model being used with 
+#' \code{\link{umap_transform}}, but allows the temporary working directory
+#' associated with saving or loading the model to be removed.
+#'
+#' @param model a UMAP model create by \code{\link{umap}}.
+#' @param cleanup if \code{TRUE}, attempt to delete the temporary working
+#'   directory that was used in either the save or load of the model.
+#' @param verbose if \code{TRUE}, log information to the console.
 #'
 #' @examples
+#' iris_train <- iris[c(1:10, 51:60), ]
+#' iris_test <- iris[100:110, ]
+#' 
 #' # create model
-#' model <- umap(iris[1:100, ], ret_model = TRUE)
-#'
-#' # save
+#' model <- umap(iris_train, ret_model = TRUE, n_epochs = 20)
+#' 
+#' # save without unloading: this leaves behind a temporary working directory
 #' model_file <- tempfile("iris_umap")
-#' save_uwot(model, file = model_file)
-#'
-#' # restore
+#' model <- save_uwot(model, file = model_file)
+#' 
+#' # The model can continue to be used
+#' test_embedding <- umap_transform(iris_test, model)
+#' 
+#' # To manually unload the model from memory when finished and to clean up
+#' # the working directory (this doesn't touch your model file)
+#' unload_uwot(model)
+#' 
+#' # At this point, model cannot be used with umap_transform, this would fail:
+#' # test_embedding2 <- umap_transform(iris_test, model)
+#' 
+#' # restore the model: this also creates a temporary working directory
 #' model2 <- load_uwot(file = model_file)
-#'
-#' identical(model, model2)
-#'
+#' test_embedding2 <- umap_transform(iris_test, model2)
+#' 
+#' # Unload and clean up the loaded model temp directory
+#' unload_uwot(model2)
+#' 
+#' # clean up the model file
 #' unlink(model_file)
+#' 
+#' # save with unloading: this deletes the temporary working directory but
+#' # doesn't allow the model to be re-used
+#' model3 <- umap(iris_train, ret_model = TRUE, n_epochs = 20)
+#' model_file3 <- tempfile("iris_umap")
+#' model3 <- save_uwot(model3, file = model_file3, unload = TRUE)
+#'
+#' @seealso \code{\link{save_uwot}}, \code{\link{load_uwot}}
 #' @export
-load_uwot <- function(file) {
-  model <- NULL
-
-  tryCatch(
-    {
-      # create directory to store files in
-      mod_dir <- tempfile(pattern = "dir")
-      dir.create(mod_dir)
-
-      utils::untar(file, exdir = mod_dir)
-
-      model_fname <- file.path(mod_dir, "uwot/model")
-      if (!file.exists(model_fname)) {
-        stop("Can't find model in ", file)
+unload_uwot <- function(model, cleanup = TRUE, verbose = FALSE) {
+  tsmessage("Unloading NN index: model will be invalid")
+  metrics <- names(model$metric)
+  n_metrics <- length(metrics)
+  for (i in 1:n_metrics) {
+    if (n_metrics == 1) {
+      model$nn_index$unload()
+    }
+    else {
+      model$nn_index[[i]]$unload()
+    }
+  }
+  
+  if (cleanup) {
+    if (is.null(model$mod_dir)) {
+      tsmessage("Model is missing temp dir location, can't clean up")
+      return();
+    }
+    else {
+      mod_dir <- model$mod_dir
+      if (!file.exists(mod_dir)) {
+        tsmessage("model temp dir location '", mod_dir, "' no longer exists")
+        return()
       }
-      model <- readRDS(file = model_fname)
-
-      metrics <- names(model$metric)
-      n_metrics <- length(metrics)
-
-      for (i in 1:n_metrics) {
-        nn_fname <- file.path(mod_dir, paste0("uwot/nn", i))
-        if (!file.exists(nn_fname)) {
-          stop("Can't find nearest neighbor index ", nn_fname, " in ", file)
-        }
-        metric <- metrics[[i]]
-        # 31: need to specify the index dimensionality when creating the index
-        ann <- create_ann(metric, ndim = length(model$metric[[i]]))
-        ann$load(nn_fname)
-        if (n_metrics == 1) {
-          model$nn_index <- ann
-        }
-        else {
-          model$nn_index[[i]] <- ann
-        }
-      }
-    },
-    finally = {
-      if (file.exists(mod_dir)) {
-        unlink(mod_dir, recursive = TRUE)
+      tsmessage("Deleting temp model dir ", mod_dir)
+      res <- unlink(mod_dir, recursive = TRUE)
+      if (res != 0) {
+        tsmessage("Unable to delete tempdir ", mod_dir)
       }
     }
-  )
+  }
+}
 
-  model
+all_nn_indices_are_loaded <- function(model) {
+  if (is.null(model$nn_index)) {
+    stop("Invalid model: has no 'nn_index'")
+  }
+  if (is.list(model$nn_index)) {
+    for (i in 1:length(model$nn_index)) {
+      if (model$nn_index[[i]]$getNTrees() == 0) {
+        return(FALSE)
+      }
+    }
+  }
+  else if (model$nn_index$getNTrees() == 0) {
+    return(FALSE)
+  }
+  TRUE
+}
+
+abspath <- function(filename) {
+  file.path(normalizePath(dirname(filename)), basename(filename))
+}
+
+# Half of whatever the C++ implementation thinks are the number of concurrent 
+# threads supported, but at least 1
+default_num_threads <- function() {
+  max(1, hardware_concurrency() / 2)
 }
 
 # Get the number of vertices in X
@@ -2305,7 +2593,6 @@ attr_to_scale_info <- function(X) {
 
 #' @useDynLib uwot, .registration=TRUE
 #' @importFrom Rcpp sourceCpp
-#' @importFrom RcppParallel RcppParallelLibs
 .onUnload <- function(libpath) {
   library.dynam.unload("uwot", libpath)
 }

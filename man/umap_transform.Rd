@@ -11,7 +11,7 @@ umap_transform(
   search_k = NULL,
   tmpdir = tempdir(),
   n_epochs = NULL,
-  n_threads = max(1, RcppParallel::defaultNumThreads()/2),
+  n_threads = NULL,
   n_sgd_threads = 0,
   grain_size = 1,
   verbose = FALSE
@@ -45,7 +45,8 @@ off between speed and thoroughness. By default, this value is set to one
 third the number of epochs used to build the \code{model}.}
 
 \item{n_threads}{Number of threads to use, (except during stochastic gradient
-descent). Default is half that recommended by RcppParallel.}
+descent). Default is half the number of concurrent threads supported by the
+system.}
 
 \item{n_sgd_threads}{Number of threads to use during stochastic gradient
 descent. If set to > 1, then results will not be reproducible, even if

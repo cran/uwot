@@ -1,134 +1,51 @@
+#include <vector>
+
 #include <Rcpp.h>
-// [[Rcpp::depends(RcppParallel)]]
-#include <RcppParallel.h>
 
-#if defined(__MINGW32__)
-#undef Realloc
-#undef Free
-#endif
+#include "RcppPerpendicular.h"
+#include "nn_parallel.h"
 
-#define __ERROR_PRINTER_OVERRIDE__ REprintf
+using namespace Rcpp;
 
-#include <annoylib.h>
-#include <kissrandom.h>
+template <typename UwotAnnoyDistance>
+auto annoy_nns_impl(const std::string &index_name, NumericMatrix mat,
+                    std::size_t n_neighbors, std::size_t search_k,
+                    std::size_t n_threads = 0, std::size_t grain_size = 1)
+    -> List {
 
-template <typename S, typename T, typename Distance, typename Random>
-struct NNWorker : public RcppParallel::Worker {
-  std::string index_name;
-  RcppParallel::RMatrix<double> mat;
-  RcppParallel::RMatrix<double> dists;
-  RcppParallel::RMatrix<int> idx;
-  std::size_t ncol;
-  std::size_t n_neighbors;
-  std::size_t search_k;
+  std::size_t nrow = mat.rows();
+  std::size_t ncol = mat.cols();
 
-  NNWorker(const std::string &index_name, const Rcpp::NumericMatrix &mat,
-           Rcpp::NumericMatrix &dists, Rcpp::IntegerMatrix &idx,
-           std::size_t ncol, std::size_t n_neighbors, std::size_t search_k)
-      : index_name(index_name), mat(mat), dists(dists), idx(idx), ncol(ncol),
-        n_neighbors(n_neighbors), search_k(search_k) {}
+  std::vector<double> vmat = as<std::vector<double>>(mat);
 
-  void operator()(std::size_t begin, std::size_t end) {
-    AnnoyIndex<S, T, Distance, Random> index(ncol);
-    index.load(index_name.c_str());
+  NNWorker<UwotAnnoyDistance> worker(index_name, vmat, ncol, n_neighbors,
+                                     search_k);
+  RcppPerpendicular::parallel_for(0, nrow, worker, n_threads, grain_size);
 
-    for (std::size_t i = begin; i < end; i++) {
-      RcppParallel::RMatrix<double>::Row row = mat.row(i);
-      std::vector<T> fv(row.length());
-      std::copy(row.begin(), row.end(), fv.begin());
-      std::vector<S> result;
-      std::vector<T> distances;
+  return List::create(
+      _("item") = IntegerMatrix(nrow, n_neighbors, worker.idx.begin()),
+      _("distance") = NumericMatrix(nrow, n_neighbors, worker.dists.begin()));
+}
 
-      index.get_nns_by_vector(fv.data(), n_neighbors, search_k, &result,
-                              &distances);
-      if (result.size() != n_neighbors || distances.size() != n_neighbors) {
-        break;
-      }
-
-      for (std::size_t j = 0; j < n_neighbors; j++) {
-        dists(i, j) = distances[j];
-        idx(i, j) = result[j];
-      }
-    }
+// [[Rcpp::export]]
+List annoy_search_parallel_cpp(const std::string &index_name, NumericMatrix mat,
+                               std::size_t n_neighbors, std::size_t search_k,
+                               const std::string &metric,
+                               std::size_t n_threads = 0,
+                               std::size_t grain_size = 1) {
+  if (metric == "euclidean") {
+    return annoy_nns_impl<UwotAnnoyEuclidean>(index_name, mat, n_neighbors,
+                                              search_k, n_threads, grain_size);
+  } else if (metric == "cosine") {
+    return annoy_nns_impl<UwotAnnoyCosine>(index_name, mat, n_neighbors,
+                                           search_k, n_threads, grain_size);
+  } else if (metric == "manhattan") {
+    return annoy_nns_impl<UwotAnnoyManhattan>(index_name, mat, n_neighbors,
+                                              search_k, n_threads, grain_size);
+  } else if (metric == "hamming") {
+    return annoy_nns_impl<UwotAnnoyHamming>(index_name, mat, n_neighbors,
+                                            search_k, n_threads, grain_size);
+  } else {
+    stop("Unknown metric '", metric, "'");
   }
-};
-
-// [[Rcpp::export]]
-Rcpp::List annoy_euclidean_nns(const std::string &index_name,
-                               const Rcpp::NumericMatrix &mat,
-                               std::size_t n_neighbors, std::size_t search_k,
-                               std::size_t grain_size = 1,
-                               bool verbose = false) {
-  std::size_t nrow = mat.rows();
-  std::size_t ncol = mat.cols();
-  Rcpp::NumericMatrix dist(nrow, n_neighbors);
-  Rcpp::IntegerMatrix idx(nrow, n_neighbors);
-  idx.fill(-1);
-
-  NNWorker<int32_t, float, Euclidean, Kiss64Random> worker(
-      index_name, mat, dist, idx, ncol, n_neighbors, search_k);
-  RcppParallel::parallelFor(0, nrow, worker, grain_size);
-
-  return Rcpp::List::create(Rcpp::Named("item") = idx,
-                            Rcpp::Named("distance") = dist);
-}
-
-// [[Rcpp::export]]
-Rcpp::List annoy_cosine_nns(const std::string &index_name,
-                            const Rcpp::NumericMatrix &mat,
-                            std::size_t n_neighbors, std::size_t search_k,
-                            std::size_t grain_size = 1, bool verbose = false) {
-  std::size_t nrow = mat.rows();
-  std::size_t ncol = mat.cols();
-  Rcpp::NumericMatrix dist(nrow, n_neighbors);
-  Rcpp::IntegerMatrix idx(nrow, n_neighbors);
-  idx.fill(-1);
-
-  NNWorker<int32_t, float, Angular, Kiss64Random> worker(
-      index_name, mat, dist, idx, ncol, n_neighbors, search_k);
-  RcppParallel::parallelFor(0, nrow, worker, grain_size);
-
-  return Rcpp::List::create(Rcpp::Named("item") = idx,
-                            Rcpp::Named("distance") = dist);
-}
-
-// [[Rcpp::export]]
-Rcpp::List annoy_manhattan_nns(const std::string &index_name,
-                               const Rcpp::NumericMatrix &mat,
-                               std::size_t n_neighbors, std::size_t search_k,
-                               std::size_t grain_size = 1,
-                               bool verbose = false) {
-  std::size_t nrow = mat.rows();
-  std::size_t ncol = mat.cols();
-  Rcpp::NumericMatrix dist(nrow, n_neighbors);
-  Rcpp::IntegerMatrix idx(nrow, n_neighbors);
-  idx.fill(-1);
-
-  NNWorker<int32_t, float, Manhattan, Kiss64Random> worker(
-      index_name, mat, dist, idx, ncol, n_neighbors, search_k);
-
-  RcppParallel::parallelFor(0, nrow, worker, grain_size);
-
-  return Rcpp::List::create(Rcpp::Named("item") = idx,
-                            Rcpp::Named("distance") = dist);
-}
-
-// [[Rcpp::export]]
-Rcpp::List annoy_hamming_nns(const std::string &index_name,
-                             const Rcpp::NumericMatrix &mat,
-                             std::size_t n_neighbors, std::size_t search_k,
-                             std::size_t grain_size = 1, bool verbose = false) {
-  std::size_t nrow = mat.rows();
-  std::size_t ncol = mat.cols();
-  Rcpp::NumericMatrix dist(nrow, n_neighbors);
-  Rcpp::IntegerMatrix idx(nrow, n_neighbors);
-  idx.fill(-1);
-
-  NNWorker<int32_t, uint64_t, Hamming, Kiss64Random> worker(
-      index_name, mat, dist, idx, ncol, n_neighbors, search_k);
-
-  RcppParallel::parallelFor(0, nrow, worker, grain_size);
-
-  return Rcpp::List::create(Rcpp::Named("item") = idx,
-                            Rcpp::Named("distance") = dist);
 }

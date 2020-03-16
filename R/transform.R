@@ -32,7 +32,8 @@
 #'   off between speed and thoroughness. By default, this value is set to one
 #'   third the number of epochs used to build the \code{model}.
 #' @param n_threads Number of threads to use, (except during stochastic gradient
-#'   descent). Default is half that recommended by RcppParallel.
+#'   descent). Default is half the number of concurrent threads supported by the
+#'   system.
 #' @param n_sgd_threads Number of threads to use during stochastic gradient
 #'   descent. If set to > 1, then results will not be reproducible, even if
 #'   `set.seed` is called with a fixed seed before running.
@@ -57,11 +58,18 @@ umap_transform <- function(X, model,
                            search_k = NULL,
                            tmpdir = tempdir(),
                            n_epochs = NULL,
-                           n_threads =
-                             max(1, RcppParallel::defaultNumThreads() / 2),
+                           n_threads = NULL,
                            n_sgd_threads = 0,
                            grain_size = 1,
                            verbose = FALSE) {
+  if (is.null(n_threads)) {
+    n_threads <- default_num_threads()
+  }
+  if (!all_nn_indices_are_loaded(model)) {
+    stop("cannot use model: NN index is unloaded." ,
+         " Try reloading with `load_uwot`")
+  }
+  
   if (is.null(n_epochs)) {
     n_epochs <- model$n_epochs
   }
@@ -110,10 +118,6 @@ umap_transform <- function(X, model,
 
   if (!is.null(scale_info)) {
     X <- apply_scaling(X, scale_info = scale_info, verbose = verbose)
-  }
-
-  if (n_threads > 0) {
-    RcppParallel::setThreadOptions(numThreads = n_threads)
   }
 
   adjusted_local_connectivity <- max(0, local_connectivity - 1.0)
@@ -209,10 +213,6 @@ umap_transform <- function(X, model,
       pluralize("thread", n_sgd_threads, " using")
     )
 
-    parallelize <- n_sgd_threads > 0
-    if (n_sgd_threads > 0) {
-      RcppParallel::setThreadOptions(numThreads = n_sgd_threads)
-    }
     embedding <- t(embedding)
     train_embedding <- t(train_embedding)
     if (tolower(method) == "umap") {
@@ -228,7 +228,7 @@ umap_transform <- function(X, model,
         initial_alpha = alpha, negative_sample_rate,
         approx_pow = approx_pow,
         pcg_rand = pcg_rand,
-        parallelize = parallelize,
+        n_threads = n_sgd_threads,
         grain_size = grain_size,
         move_other = FALSE,
         verbose = verbose
@@ -245,7 +245,7 @@ umap_transform <- function(X, model,
         initial_alpha = alpha,
         negative_sample_rate = negative_sample_rate,
         pcg_rand = pcg_rand,
-        parallelize = parallelize,
+        n_threads = n_sgd_threads,
         grain_size = grain_size,
         move_other = FALSE,
         verbose = verbose
@@ -257,17 +257,18 @@ umap_transform <- function(X, model,
 }
 
 init_new_embedding <- function(train_embedding, nn, graph, weighted = TRUE,
-                               n_threads =
-                                 max(1, RcppParallel::defaultNumThreads() / 2),
+                               n_threads = NULL,
                                grain_size = 1, verbose = FALSE) {
-  parallelize <- n_threads > 0
+  if (is.null(n_threads)) {
+    n_threads <- default_num_threads()
+  }
   if (weighted) {
     tsmessage(
       "Initializing by weighted average of neighbor coordinates",
       pluralize("thread", n_threads, " using")
     )
     embedding <- init_transform_parallel(train_embedding, nn$idx, graph,
-      parallelize = parallelize,
+      n_threads = n_threads,
       grain_size = grain_size
     )
   }
@@ -277,8 +278,8 @@ init_new_embedding <- function(train_embedding, nn, graph, weighted = TRUE,
       pluralize("thread", n_threads, " using")
     )
     embedding <- init_transform_av_parallel(train_embedding, nn$idx,
-      parallelize = parallelize,
-      grain_size = grain_size
+                                            n_threads = n_threads,
+                                            grain_size = grain_size
     )
   }
 
@@ -348,4 +349,21 @@ apply_pca <- function(X, pca_res, verbose = FALSE) {
     X <- sweep(X, 2, pca_res$center)
   }
   X %*% pca_res$rotation
+}
+
+all_nn_indices_are_loaded <- function(model) {
+  if (is.null(model$nn_index)) {
+    stop("Invalid model: has no 'nn_index'")
+  }
+  if (is.list(model$nn_index)) {
+    for (i in 1:length(model$nn_index)) {
+      if (model$nn_index$getNTrees() == 0) {
+        return(FALSE)
+      }
+    }
+  }
+  else if (model$nn_index$getNTrees() == 0) {
+    return(FALSE)
+  }
+  TRUE
 }

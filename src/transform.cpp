@@ -17,101 +17,44 @@
 //  You should have received a copy of the GNU General Public License
 //  along with UWOT.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <Rcpp.h>
-#include <RcppParallel.h>
 #include <vector>
-// [[Rcpp::depends(RcppParallel)]]
 
-struct AverageWorker : public RcppParallel::Worker {
+#include <Rcpp.h>
 
-  const RcppParallel::RMatrix<double> train_embedding;
-  const RcppParallel::RMatrix<int> nn_index;
-  RcppParallel::RMatrix<double> embedding;
-  const std::size_t nc;
-  const std::size_t nnbrs;
-  const double one_over_n;
+#include "RcppPerpendicular.h"
+#include "uwot/transform.h"
 
-  AverageWorker(Rcpp::NumericMatrix train_embedding,
-                Rcpp::IntegerMatrix nn_index, Rcpp::NumericMatrix embedding)
-      : train_embedding(train_embedding), nn_index(nn_index),
-        embedding(embedding), nc(train_embedding.ncol()),
-        nnbrs(nn_index.ncol()), one_over_n(1.0 / nnbrs) {}
-
-  void operator()(std::size_t begin, std::size_t end) {
-    std::vector<double> sumc(nc);
-    for (std::size_t i = begin; i < end; i++) {
-      std::fill(sumc.begin(), sumc.end(), 0.0);
-
-      for (std::size_t j = 0; j < nnbrs; j++) {
-        auto nbr = nn_index(i, j) - 1;
-        for (std::size_t k = 0; k < nc; k++) {
-          sumc[k] += train_embedding(nbr, k);
-        }
-      }
-
-      for (std::size_t k = 0; k < nc; k++) {
-        embedding(i, k) = sumc[k] * one_over_n;
-      }
-    }
-  }
-};
+using namespace Rcpp;
 
 // [[Rcpp::export]]
-Rcpp::NumericMatrix init_transform_av_parallel(
-    Rcpp::NumericMatrix train_embedding, Rcpp::IntegerMatrix nn_index,
-    bool parallelize = true, const std::size_t grain_size = 1) {
-  Rcpp::NumericMatrix embedding(nn_index.nrow(), train_embedding.ncol());
+NumericMatrix init_transform_av_parallel(NumericMatrix train_embedding,
+                                         IntegerMatrix nn_index,
+                                         std::size_t n_threads = 0,
+                                         std::size_t grain_size = 1) {
 
-  AverageWorker worker(train_embedding, nn_index, embedding);
+  std::size_t n_train_vertices = train_embedding.nrow();
+  std::size_t ndim = train_embedding.ncol();
+  std::size_t n_test_vertices = nn_index.nrow();
 
-  if (parallelize) {
-    RcppParallel::parallelFor(0, nn_index.nrow(), worker, grain_size);
+  auto train_embeddingv = as<std::vector<float>>(train_embedding);
+  auto nn_indexv = as<std::vector<int>>(nn_index);
+  // Convert to zero-indexing
+  for (int &i : nn_indexv) {
+    --i;
+  }
+
+  uwot::AverageWorker worker(train_embeddingv, n_train_vertices, nn_indexv,
+                             n_test_vertices);
+
+  if (n_threads > 0) {
+    RcppPerpendicular::parallel_for(0, n_test_vertices, worker, n_threads,
+                                    grain_size);
   } else {
-    worker(0, nn_index.nrow());
+    worker(0, n_test_vertices);
   }
 
-  return embedding;
+  return NumericMatrix(n_test_vertices, ndim, worker.embedding.begin());
 }
-
-struct WeightedAverageWorker : public RcppParallel::Worker {
-
-  const RcppParallel::RMatrix<double> train_embedding;
-  const RcppParallel::RMatrix<int> nn_index;
-  const RcppParallel::RMatrix<double> nn_weights;
-  RcppParallel::RMatrix<double> embedding;
-  const std::size_t nc;
-  const std::size_t nnbrs;
-
-  WeightedAverageWorker(Rcpp::NumericMatrix train_embedding,
-                        Rcpp::IntegerMatrix nn_index,
-                        const Rcpp::NumericMatrix &nn_weights,
-                        Rcpp::NumericMatrix embedding)
-      : train_embedding(train_embedding), nn_index(nn_index),
-        nn_weights(nn_weights), embedding(embedding),
-        nc(train_embedding.ncol()), nnbrs(nn_index.ncol()) {}
-
-  void operator()(std::size_t begin, std::size_t end) {
-    std::vector<double> sumc(nc);
-    for (std::size_t i = begin; i < end; i++) {
-      std::fill(sumc.begin(), sumc.end(), 0.0);
-
-      double sumw = 0.0;
-
-      for (std::size_t j = 0; j < nnbrs; j++) {
-        auto nbr = nn_index(i, j) - 1;
-        double w = nn_weights(i, j);
-        sumw += w;
-        for (std::size_t k = 0; k < nc; k++) {
-          sumc[k] += train_embedding(nbr, k) * w;
-        }
-      }
-
-      for (std::size_t k = 0; k < nc; k++) {
-        embedding(i, k) = sumc[k] / sumw;
-      }
-    }
-  }
-};
 
 // Initialize embedding as a weighted average of nearest neighbors of each point
 // train_embedding: n_train x dim matrix of final embedding coordinates
@@ -120,21 +63,33 @@ struct WeightedAverageWorker : public RcppParallel::Worker {
 // weights: n_test x n_nbrs weight matrix
 // Returns the n_test x dim matrix of initialized coordinates.
 // [[Rcpp::export]]
-Rcpp::NumericMatrix init_transform_parallel(Rcpp::NumericMatrix train_embedding,
-                                            Rcpp::IntegerMatrix nn_index,
-                                            Rcpp::NumericMatrix nn_weights,
-                                            const std::size_t grain_size = 1,
-                                            bool parallelize = true) {
-  Rcpp::NumericMatrix embedding(nn_index.nrow(), train_embedding.ncol());
+NumericMatrix init_transform_parallel(NumericMatrix train_embedding,
+                                      IntegerMatrix nn_index,
+                                      NumericMatrix nn_weights,
+                                      std::size_t n_threads = 0,
+                                      std::size_t grain_size = 1) {
 
-  WeightedAverageWorker worker(train_embedding, nn_index, nn_weights,
-                               embedding);
+  std::size_t n_train_vertices = train_embedding.nrow();
+  std::size_t ndim = train_embedding.ncol();
+  std::size_t n_test_vertices = nn_index.nrow();
 
-  if (parallelize) {
-    RcppParallel::parallelFor(0, nn_index.nrow(), worker, grain_size);
+  auto train_embeddingv = as<std::vector<float>>(train_embedding);
+  auto nn_indexv = as<std::vector<int>>(nn_index);
+  // Convert to zero-indexing
+  for (int &i : nn_indexv) {
+    --i;
+  }
+  auto nn_weightsv = as<std::vector<float>>(nn_weights);
+
+  uwot::WeightedAverageWorker worker(train_embeddingv, n_train_vertices,
+                                     nn_indexv, nn_weightsv, n_test_vertices);
+
+  if (n_threads > 0) {
+    RcppPerpendicular::parallel_for(0, n_test_vertices, worker, n_threads,
+                                    grain_size);
   } else {
-    worker(0, nn_index.nrow());
+    worker(0, n_test_vertices);
   }
 
-  return embedding;
+  return NumericMatrix(n_test_vertices, ndim, worker.embedding.begin());
 }
