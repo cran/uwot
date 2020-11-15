@@ -42,15 +42,19 @@ tumap(
 }
 \arguments{
 \item{X}{Input data. Can be a \code{\link{data.frame}}, \code{\link{matrix}},
-\code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}. A
-sparse matrix is interpreted as a distance matrix and both implicit and
-explicit zero entries are ignored. Set zero distances you want to keep to
-an arbitrarily small non-zero value (e.g. \code{1e-10}). Matrix and data
-frames should contain one observation per row. Data frames will have any
-non-numeric columns removed, although factor columns will be used if
-explicitly included via \code{metric} (see the help for \code{metric} for
-details). Can be \code{NULL} if precomputed nearest neighbor data is passed
-to \code{nn_method}, and \code{init} is not \code{"spca"} or \code{"pca"}.}
+\code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}.
+Matrix and data frames should contain one observation per row. Data frames
+will have any non-numeric columns removed, although factor columns will be
+used if explicitly included via \code{metric} (see the help for
+\code{metric} for details). A sparse matrix is interpreted as a distance
+matrix, and is assumed to be symmetric, so you can also pass in an
+explicitly upper or lower triangular sparse matrix to save storage. There
+must be at least \code{n_neighbors} non-zero distances for each row. Both
+implicit and explicit zero entries are ignored. Set zero distances you want
+to keep to an arbitrarily small non-zero value (e.g. \code{1e-10}).
+\code{X} can also be \code{NULL} if pre-computed nearest neighbor data is
+passed to \code{nn_method}, and \code{init} is not \code{"spca"} or
+\code{"pca"}.}
 
 \item{n_neighbors}{The size of local neighborhood (in terms of number of
 neighboring sample points) used for manifold approximation. Larger values
@@ -69,6 +73,7 @@ integer value in the range \code{2} to \code{100}.}
   \item \code{"cosine"}
   \item \code{"manhattan"}
   \item \code{"hamming"}
+  \item \code{"correlation"} (a distance based on the Pearson correlation)
   \item \code{"categorical"} (see below)
 }
 Only applies if \code{nn_method = "annoy"} (for \code{nn_method = "fnn"}, the
@@ -206,7 +211,7 @@ embedding.}
  }
 By default, if \code{X} has less than 4,096 vertices, the exact nearest
 neighbors are found. Otherwise, approximate nearest neighbors are used.
-You may also pass precalculated nearest neighbor data to this argument. It
+You may also pass pre-calculated nearest neighbor data to this argument. It
 must be a list consisting of two elements:
 \itemize{
   \item \code{"idx"}. A \code{n_vertices x n_neighbors} matrix
@@ -216,10 +221,10 @@ must be a list consisting of two elements:
   \item \code{"dist"}. A \code{n_vertices x n_neighbors} matrix
   containing the distances of the nearest neighbors.
 }
-Multiple nearest neighbor data (e.g. from two different precomputed
+Multiple nearest neighbor data (e.g. from two different pre-calculated
 metrics) can be passed by passing a list containing the nearest neighbor
 data lists as items.
-The \code{n_neighbors} parameter is ignored when using precalculated
+The \code{n_neighbors} parameter is ignored when using pre-calculated
 nearest neighbor data.}
 
 \item{n_trees}{Number of trees to build when constructing the nearest

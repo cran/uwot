@@ -9,15 +9,19 @@
 #' present to avoid break backwards compatibility only.
 #'
 #' @param X Input data. Can be a \code{\link{data.frame}}, \code{\link{matrix}},
-#'   \code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}. A
-#'   sparse matrix is interpreted as a distance matrix and both implicit and
-#'   explicit zero entries are ignored. Set zero distances you want to keep to
-#'   an arbitrarily small non-zero value (e.g. \code{1e-10}). Matrix and data
-#'   frames should contain one observation per row. Data frames will have any
-#'   non-numeric columns removed, although factor columns will be used if
-#'   explicitly included via \code{metric} (see the help for \code{metric} for
-#'   details). Can be \code{NULL} if precomputed nearest neighbor data is passed
-#'   to \code{nn_method}, and \code{init} is not \code{"spca"} or \code{"pca"}.
+#'   \code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}.
+#'   Matrix and data frames should contain one observation per row. Data frames
+#'   will have any non-numeric columns removed, although factor columns will be
+#'   used if explicitly included via \code{metric} (see the help for
+#'   \code{metric} for details). A sparse matrix is interpreted as a distance
+#'   matrix, and is assumed to be symmetric, so you can also pass in an
+#'   explicitly upper or lower triangular sparse matrix to save storage. There
+#'   must be at least \code{n_neighbors} non-zero distances for each row. Both
+#'   implicit and explicit zero entries are ignored. Set zero distances you want
+#'   to keep to an arbitrarily small non-zero value (e.g. \code{1e-10}).
+#'   \code{X} can also be \code{NULL} if pre-computed nearest neighbor data is
+#'   passed to \code{nn_method}, and \code{init} is not \code{"spca"} or
+#'   \code{"pca"}.
 #' @param n_neighbors The size of local neighborhood (in terms of number of
 #'   neighboring sample points) used for manifold approximation. Larger values
 #'   result in more global views of the manifold, while smaller values result in
@@ -33,6 +37,7 @@
 #'   \item \code{"cosine"}
 #'   \item \code{"manhattan"}
 #'   \item \code{"hamming"}
+#'   \item \code{"correlation"} (a distance based on the Pearson correlation)
 #'   \item \code{"categorical"} (see below)
 #' }
 #' Only applies if \code{nn_method = "annoy"} (for \code{nn_method = "fnn"}, the
@@ -399,7 +404,7 @@
 #' Van der Maaten, L., & Hinton, G. (2008).
 #' Visualizing data using t-SNE.
 #' \emph{Journal of Machine Learning Research}, \emph{9} (2579-2605).
-#' \url{http://www.jmlr.org/papers/v9/vandermaaten08a.html}
+#' \url{https://www.jmlr.org/papers/v9/vandermaaten08a.html}
 #' @export
 umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                  n_epochs = NULL, learning_rate = 1, scale = FALSE,
@@ -463,15 +468,19 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' present to avoid break backwards compatibility only.
 #'
 #' @param X Input data. Can be a \code{\link{data.frame}}, \code{\link{matrix}},
-#'   \code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}. A
-#'   sparse matrix is interpreted as a distance matrix and both implicit and
-#'   explicit zero entries are ignored. Set zero distances you want to keep to
-#'   an arbitrarily small non-zero value (e.g. \code{1e-10}). Matrix and data
-#'   frames should contain one observation per row. Data frames will have any
-#'   non-numeric columns removed, although factor columns will be used if
-#'   explicitly included via \code{metric} (see the help for \code{metric} for
-#'   details). Can be \code{NULL} if precomputed nearest neighbor data is passed
-#'   to \code{nn_method}, and \code{init} is not \code{"spca"} or \code{"pca"}.
+#'   \code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}.
+#'   Matrix and data frames should contain one observation per row. Data frames
+#'   will have any non-numeric columns removed, although factor columns will be
+#'   used if explicitly included via \code{metric} (see the help for
+#'   \code{metric} for details). A sparse matrix is interpreted as a distance
+#'   matrix, and is assumed to be symmetric, so you can also pass in an
+#'   explicitly upper or lower triangular sparse matrix to save storage. There
+#'   must be at least \code{n_neighbors} non-zero distances for each row. Both
+#'   implicit and explicit zero entries are ignored. Set zero distances you want
+#'   to keep to an arbitrarily small non-zero value (e.g. \code{1e-10}).
+#'   \code{X} can also be \code{NULL} if pre-computed nearest neighbor data is
+#'   passed to \code{nn_method}, and \code{init} is not \code{"spca"} or
+#'   \code{"pca"}.
 #' @param n_neighbors The size of local neighborhood (in terms of number of
 #'   neighboring sample points) used for manifold approximation. Larger values
 #'   result in more global views of the manifold, while smaller values result in
@@ -487,6 +496,7 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   \item \code{"cosine"}
 #'   \item \code{"manhattan"}
 #'   \item \code{"hamming"}
+#'   \item \code{"correlation"} (a distance based on the Pearson correlation)
 #'   \item \code{"categorical"} (see below)
 #' }
 #' Only applies if \code{nn_method = "annoy"} (for \code{nn_method = "fnn"}, the
@@ -613,7 +623,7 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'    }
 #'   By default, if \code{X} has less than 4,096 vertices, the exact nearest
 #'   neighbors are found. Otherwise, approximate nearest neighbors are used.
-#'   You may also pass precalculated nearest neighbor data to this argument. It
+#'   You may also pass pre-calculated nearest neighbor data to this argument. It
 #'   must be a list consisting of two elements:
 #'   \itemize{
 #'     \item \code{"idx"}. A \code{n_vertices x n_neighbors} matrix
@@ -623,10 +633,10 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'     \item \code{"dist"}. A \code{n_vertices x n_neighbors} matrix
 #'     containing the distances of the nearest neighbors.
 #'   }
-#'   Multiple nearest neighbor data (e.g. from two different precomputed
+#'   Multiple nearest neighbor data (e.g. from two different pre-calculated
 #'   metrics) can be passed by passing a list containing the nearest neighbor
 #'   data lists as items.
-#'   The \code{n_neighbors} parameter is ignored when using precalculated
+#'   The \code{n_neighbors} parameter is ignored when using pre-calculated
 #'   nearest neighbor data.
 #' @param n_trees Number of trees to build when constructing the nearest
 #'   neighbor index. The more trees specified, the larger the index, but the
@@ -860,15 +870,19 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' present to avoid break backwards compatibility only.
 #'
 #' @param X Input data. Can be a \code{\link{data.frame}}, \code{\link{matrix}},
-#'   \code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}. A
-#'   sparse matrix is interpreted as a distance matrix and both implicit and
-#'   explicit zero entries are ignored. Set zero distances you want to keep to
-#'   an arbitrarily small non-zero value (e.g. \code{1e-10}). Matrix and data
-#'   frames should contain one observation per row. Data frames will have any
-#'   non-numeric columns removed, although factor columns will be used if
-#'   explicitly included via \code{metric} (see the help for \code{metric} for
-#'   details). Can be \code{NULL} if precomputed nearest neighbor data is passed
-#'   to \code{nn_method}, and \code{init} is not \code{"spca"} or \code{"pca"}.
+#'   \code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}.
+#'   Matrix and data frames should contain one observation per row. Data frames
+#'   will have any non-numeric columns removed, although factor columns will be
+#'   used if explicitly included via \code{metric} (see the help for
+#'   \code{metric} for details). A sparse matrix is interpreted as a distance
+#'   matrix, and is assumed to be symmetric, so you can also pass in an
+#'   explicitly upper or lower triangular sparse matrix to save storage. There
+#'   must be at least \code{n_neighbors} non-zero distances for each row. Both
+#'   implicit and explicit zero entries are ignored. Set zero distances you want
+#'   to keep to an arbitrarily small non-zero value (e.g. \code{1e-10}).
+#'   \code{X} can also be \code{NULL} if pre-computed nearest neighbor data is
+#'   passed to \code{nn_method}, and \code{init} is not \code{"spca"} or
+#'   \code{"pca"}.
 #' @param perplexity Controls the size of the local neighborhood used for
 #'   manifold approximation. This is the analogous to \code{n_neighbors} in
 #'   \code{\link{umap}}. Change this, rather than \code{n_neighbors}.
@@ -885,6 +899,7 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   \item \code{"cosine"}
 #'   \item \code{"manhattan"}
 #'   \item \code{"hamming"}
+#'   \item \code{"correlation"} (a distance based on the Pearson correlation)
 #'   \item \code{"categorical"} (see below)
 #' }
 #' Only applies if \code{nn_method = "annoy"} (for \code{nn_method = "fnn"}, the
@@ -1234,6 +1249,9 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     if (pca < n_components) {
       stop("'pca' must be >= n_components")
     }
+    if (pca > min(nrow(X), ncol(X))) {
+      stop("'pca' must be <= min(nrow(X), ncol(X))")
+    }
   }
 
   if (fast_sgd) {
@@ -1505,12 +1523,17 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     if (init_is_spectral(init)) {
       connected <- connected_components(V)
       if (connected$n_components > 1) {
-        tsmessage(
-          "Found ", connected$n_components, " connected components, ",
-          "falling back to 'spca' initialization with init_sdev = 1"
-        )
-        init <- "spca"
-        init_sdev <- 1
+        tsmessage("Found ", connected$n_components, " connected components, ", appendLF = FALSE)
+        if (is.null(X)) {
+          tsmessage("falling back to random initialization", time_stamp = FALSE)
+          init <- "random"
+        }
+        else {
+          tsmessage("falling back to 'spca' initialization with init_sdev = 1",
+                    time_stamp = FALSE)
+          init <- "spca"
+          init_sdev <- 1
+        }
       }
     }
 
@@ -1653,7 +1676,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     res <- list(embedding = embedding)
     if (ret_model) {
       res <- append(res, list(
-        scale_info = attr_to_scale_info(X),
+        scale_info = if (!is.null(X)) { attr_to_scale_info(X) } else { NULL },
         n_neighbors = n_neighbors,
         search_k = search_k,
         local_connectivity = local_connectivity,
@@ -1684,7 +1707,12 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
           # the input data at load time)
           # To be sure of the dimensionality, fetch the first item from the 
           # index and see how many elements are in the returned vector.
-          res$metric[[1]] <- list(ndim = length(res$nn_index$getItemsVector(0)))
+          if(!is.null(X)){
+            rcppannoy <- get_rcppannoy(res$nn_index)
+            res$metric[[1]] <- list(ndim = length(rcppannoy$getItemsVector(0)))
+          } else {
+            res$metric[[1]] <- list()
+          }
         }
       }
       if (!is.null(pca_models)) {
@@ -1808,10 +1836,10 @@ save_uwot <- function(model, file, unload = FALSE, verbose = FALSE) {
       for (i in 1:n_metrics) {
         nn_tmpfname <- file.path(uwot_dir, paste0("nn", i))
         if (n_metrics == 1) {
-          model$nn_index$save(nn_tmpfname)
+          model$nn_index$ann$save(nn_tmpfname)
         }
         else {
-          model$nn_index[[i]]$save(nn_tmpfname)
+          model$nn_index[[i]]$ann$save(nn_tmpfname)
         }
       }
       
@@ -1923,7 +1951,11 @@ load_uwot <- function(file, verbose = FALSE) {
       # so the dimension is the number of them
       ndim = length(model$metric[[i]])
     }
-    ann <- create_ann(metric, ndim = ndim)
+    annoy_metric <- metric
+    if (metric == "correlation") {
+      annoy_metric <- "cosine"
+    }
+    ann <- create_ann(annoy_metric, ndim = ndim)
     ann$load(nn_fname)
     if (n_metrics == 1) {
       model$nn_index <- ann
@@ -1994,17 +2026,19 @@ unload_uwot <- function(model, cleanup = TRUE, verbose = FALSE) {
   n_metrics <- length(metrics)
   for (i in 1:n_metrics) {
     if (n_metrics == 1) {
-      model$nn_index$unload()
+      rcppannoy <- get_rcppannoy(model$nn_index)
+      rcppannoy$unload()
     }
     else {
-      model$nn_index[[i]]$unload()
+      rcppannoy <- get_rcppannoy(model$nn_index[[i]])
+      rcppannoy$unload()
     }
   }
   
   if (cleanup) {
     if (is.null(model$mod_dir)) {
       tsmessage("Model is missing temp dir location, can't clean up")
-      return();
+      return()
     }
     else {
       mod_dir <- model$mod_dir
@@ -2025,15 +2059,20 @@ all_nn_indices_are_loaded <- function(model) {
   if (is.null(model$nn_index)) {
     stop("Invalid model: has no 'nn_index'")
   }
-  if (is.list(model$nn_index)) {
+  
+  if (is.list(model$nn_index) && is.null(model$nn_index$type)) {
     for (i in 1:length(model$nn_index)) {
-      if (model$nn_index[[i]]$getNTrees() == 0) {
+      rcppannoy <- get_rcppannoy(model$nn_index[[i]])
+      if (rcppannoy$getNTrees() == 0) {
         return(FALSE)
       }
     }
   }
-  else if (model$nn_index$getNTrees() == 0) {
-    return(FALSE)
+  else {
+    rcppannoy <- get_rcppannoy(model$nn_index)
+    if (rcppannoy$getNTrees() == 0) {
+      return(FALSE)
+    }
   }
   TRUE
 }
@@ -2134,7 +2173,7 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
     metric <- mnames[[i]]
     metric <- match.arg(metric, c(
       "euclidean", "cosine", "manhattan",
-      "hamming", "precomputed"
+      "hamming", "correlation", "precomputed"
     ))
     # Defaults for this block which can be overridden
     pca_i <- pca

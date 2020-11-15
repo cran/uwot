@@ -108,3 +108,30 @@ expect_equal(iris10_colrange, iris10_crtrans, check.attributes = FALSE)
 iris10pca <- pca_scores(iris10, ncol = 2, ret_extra = TRUE)
 iris10pcat <- apply_pca(iris10, iris10pca)
 expect_equal(iris10pca$scores, iris10pcat, check.attributes = FALSE)
+
+# #64
+test_that("can use pre-calculated neighbors in transform", {
+  
+  set.seed(1337)
+  X_train <-  as.matrix(iris[c(1:10,51:60), -5])
+  iris_train_nn <- annoy_nn(X = X_train, k = 4, 
+                            metric = "euclidean", n_threads = 0,
+                            ret_index = TRUE)
+  iris_umap_train <- umap(X = NULL, nn_method = iris_train_nn, ret_model = TRUE)
+  query_ref_nn <- annoy_search(X = as.matrix(iris[101:110, -5]), 
+                               k = 4, 
+                               ann = iris_train_nn$index, n_threads = 0)
+  iris_umap_test <- umap_transform(X = NULL,  model = iris_umap_train, 
+                                   nn_method = query_ref_nn)
+  expect_ok_matrix(iris_umap_test)
+  
+  # also test that we can provide our own input and it's unchanged with 0 epochs
+  nr <- nrow(query_ref_nn$idx)
+  nc <- ncol(iris_umap_train$embedding)
+  test_init <- matrix(rnorm(nr * nc), nrow = nr, ncol = nc)
+  iris_umap_test_rand0 <- umap_transform(X = NULL,  model = iris_umap_train, 
+                                   nn_method = query_ref_nn, 
+                                   init = test_init, n_epochs = 0)
+  expect_equal(iris_umap_test_rand0, test_init)
+})
+

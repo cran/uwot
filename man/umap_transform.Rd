@@ -5,8 +5,9 @@
 \title{Add New Points to an Existing Embedding}
 \usage{
 umap_transform(
-  X,
-  model,
+  X = NULL,
+  model = NULL,
+  nn_method = NULL,
   init_weighted = TRUE,
   search_k = NULL,
   tmpdir = tempdir(),
@@ -14,7 +15,8 @@ umap_transform(
   n_threads = NULL,
   n_sgd_threads = 0,
   grain_size = 1,
-  verbose = FALSE
+  verbose = FALSE,
+  init = "weighted"
 )
 }
 \arguments{
@@ -24,11 +26,31 @@ the \code{model}.}
 
 \item{model}{Data associated with an existing embedding.}
 
+\item{nn_method}{Optional pre-calculated nearest neighbor data. It must be a 
+list consisting of two elements:
+  \itemize{
+    \item \code{"idx"}. A \code{n_vertices x n_neighbors} matrix
+    containing the integer indexes of the nearest neighbors in \code{X}. Each
+    vertex is considered to be its own nearest neighbor, i.e.
+    \code{idx[, 1] == 1:n_vertices}.
+    \item \code{"dist"}. A \code{n_vertices x n_neighbors} matrix
+    containing the distances of the nearest neighbors.
+  }
+  Multiple nearest neighbor data (e.g. from two different pre-calculated
+  metrics) can be passed by passing a list containing the nearest neighbor
+  data lists as items.
+  The \code{X} parameter is ignored when using pre-calculated nearest 
+  neighbor data.}
+
 \item{init_weighted}{If \code{TRUE}, then initialize the embedded coordinates
 of \code{X} using a weighted average of the coordinates of the nearest
 neighbors from the original embedding in \code{model}, where the weights
 used are the edge weights from the UMAP smoothed knn distances. Otherwise,
-use an unweighted average.}
+use an un-weighted average.
+This parameter will be deprecated and removed at version 1.0 of this
+package. Use the \code{init} parameter as a replacement, replacing
+\code{init_weighted = TRUE} with \code{init = "weighted"} and
+\code{init_weighted = FALSE} with \code{init = "average"}.}
 
 \item{search_k}{Number of nodes to search during the neighbor retrieval. The
 larger k, the more the accurate results, but the longer the search takes.
@@ -58,6 +80,20 @@ be used. Used in conjunction with \code{n_threads} and
 \code{n_sgd_threads}.}
 
 \item{verbose}{If \code{TRUE}, log details to the console.}
+
+\item{init}{how to initialize the transformed coordinates. One of:
+  \itemize{
+    \item \code{"weighted"} (The default). Use a weighted average of the
+    coordinates of the nearest neighbors from the original embedding in
+    \code{model}, where the weights used are the edge weights from the UMAP
+    smoothed knn distances. Equivalent to \code{init_weighted = TRUE}.
+    \item \code{"average"}. Use the mean average of the coordinates of 
+    the nearest neighbors from the original embedding in \code{model}.
+    Equivalent to \code{init_weighted = FALSE}.
+    \item A matrix of user-specified input coordinates, which must have
+    dimensions the same as \code{(nrow(X), ncol(model$embedding))}.
+  }
+This parameter should be used in preference to \code{init_weighted}.}
 }
 \value{
 A matrix of coordinates for \code{X} transformed into the space
