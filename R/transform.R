@@ -15,13 +15,16 @@
 #'   have the same columns in the same order as the input data used to generate
 #'   the \code{model}.
 #' @param model Data associated with an existing embedding.
-#' @param nn_method Optional pre-calculated nearest neighbor data. It must be a 
-#' list consisting of two elements:
+#' @param nn_method Optional pre-calculated nearest neighbor data. 
+#' 
+#' The format is 
+#'   a list consisting of two elements:
 #'   \itemize{
-#'     \item \code{"idx"}. A \code{n_vertices x n_neighbors} matrix
-#'     containing the integer indexes of the nearest neighbors in \code{X}. Each
-#'     vertex is considered to be its own nearest neighbor, i.e.
-#'     \code{idx[, 1] == 1:n_vertices}.
+#'     \item \code{"idx"}. A \code{n_vertices x n_neighbors} matrix where 
+#'     \code{n_vertices} is the number of items to be transformed. The contents 
+#'     of the matrix should be the integer indexes of the data used to generate
+#'     the \code{model}, which are the \code{n_neighbors}-nearest neighbors of
+#'     the data to be transformed.
 #'     \item \code{"dist"}. A \code{n_vertices x n_neighbors} matrix
 #'     containing the distances of the nearest neighbors.
 #'   }
@@ -54,8 +57,10 @@
 #'   descent). Default is half the number of concurrent threads supported by the
 #'   system.
 #' @param n_sgd_threads Number of threads to use during stochastic gradient
-#'   descent. If set to > 1, then results will not be reproducible, even if
-#'   `set.seed` is called with a fixed seed before running.
+#'   descent. If set to > 1, then be aware that if \code{batch = FALSE}, results
+#'   will \emph{not} be reproducible, even if \code{set.seed} is called with a
+#'   fixed seed before running. Set to \code{"auto"} to use the same value as
+#'   \code{n_threads}.
 #' @param grain_size Minimum batch size for multithreading. If the number of
 #'   items to process in a thread falls below this number, then no threads will
 #'   be used. Used in conjunction with \code{n_threads} and
@@ -74,6 +79,60 @@
 #'     dimensions the same as \code{(nrow(X), ncol(model$embedding))}.
 #'   }
 #' This parameter should be used in preference to \code{init_weighted}.
+#' @param batch If \code{TRUE}, then embedding coordinates are updated at the
+#'   end of each epoch rather than during the epoch. In batch mode, results are
+#'   reproducible with a fixed random seed even with \code{n_sgd_threads > 1},
+#'   at the cost of a slightly higher memory use. You may also have to modify
+#'   \code{learning_rate} and increase \code{n_epochs}, so whether this provides
+#'   a speed increase over the single-threaded optimization is likely to be
+#'   dataset and hardware-dependent. If \code{NULL}, the transform will use the
+#'   value provided in the \code{model}, if available. Default: \code{FALSE}. 
+#' @param learning_rate Initial learning rate used in optimization of the
+#'   coordinates. This overrides the value associated with the \code{model}.
+#'   This should be left unspecified under most circumstances.
+#' @param opt_args A list of optimizer parameters, used when 
+#'   \code{batch = TRUE}. The default optimization method used is Adam (Kingma
+#'   and Ba, 2014).
+#'   \itemize{
+#'     \item \code{method} The optimization method to use. Either \code{"adam"} 
+#'     or \code{"sgd"} (stochastic gradient descent). Default: \code{"adam"}.
+#'     \item \code{beta1} (Adam only). The weighting parameter for the
+#'     exponential moving average of the first moment estimator. Effectively the
+#'     momentum parameter. Should be a floating point value between 0 and 1.
+#'     Higher values can smooth oscillatory updates in poorly-conditioned
+#'     situations and may allow for a larger \code{learning_rate} to be
+#'     specified, but too high can cause divergence. Default: \code{0.5}.
+#'     \item \code{beta2} (Adam only). The weighting parameter for the
+#'     exponential moving average of the uncentered second moment estimator.
+#'     Should be a floating point value between 0 and 1. Controls the degree of
+#'     adaptivity in the step-size. Higher values put more weight on previous
+#'     time steps. Default: \code{0.9}.
+#'     \item \code{eps} (Adam only). Intended to be a small value to prevent
+#'     division by zero, but in practice can also affect convergence due to its
+#'     interaction with \code{beta2}. Higher values reduce the effect of the
+#'     step-size adaptivity and bring the behavior closer to stochastic gradient
+#'     descent with momentum. Typical values are between 1e-8 and 1e-3. Default:
+#'     \code{1e-7}.
+#'     \item \code{alpha} The initial learning rate. Default: the value of the 
+#'     \code{learning_rate} parameter.
+#'   }
+#'   If \code{NULL}, the transform will use the value provided in the 
+#'   \code{model}, if available.
+#' @param epoch_callback A function which will be invoked at the end of every
+#'   epoch. Its signature should be:
+#'   \code{(epoch, n_epochs, coords, fixed_coords)}, where:
+#'   \itemize{
+#'     \item \code{epoch} The current epoch number (between \code{1} and 
+#'     \code{n_epochs}).
+#'     \item \code{n_epochs} Number of epochs to use during the optimization of
+#'     the embedded coordinates.
+#'     \item \code{coords} The embedded coordinates as of the end of the current
+#'     epoch, as a matrix with dimensions (N, \code{n_components}).
+#'     \item \code{fixed_coords} The originally embedded coordinates from the
+#'     \code{model}. These are fixed and do not change. A matrix with dimensions 
+#'     (Nmodel, \code{n_components}) where \code{Nmodel} is the number of
+#'     observations in the original data.
+#'   }
 #' @return A matrix of coordinates for \code{X} transformed into the space
 #'   of the \code{model}.
 #' @examples
@@ -95,7 +154,12 @@ umap_transform <- function(X = NULL, model = NULL,
                            n_sgd_threads = 0,
                            grain_size = 1,
                            verbose = FALSE,
-                           init = "weighted") {
+                           init = "weighted",
+                           batch = NULL,
+                           learning_rate = NULL,
+                           opt_args = NULL,
+                           epoch_callback = NULL
+                           ) {
   if (is.null(n_threads)) {
     n_threads <- default_num_threads()
   }
@@ -143,12 +207,39 @@ umap_transform <- function(X = NULL, model = NULL,
   method <- model$method
   scale_info <- model$scale_info
   metric <- model$metric
+  nblocks <- length(metric)
   pca_models <- model$pca_models
+  
+  if (is.null(batch)) {
+    if (!is.null(model$batch)) {
+      batch <- model$batch
+    }
+    else {
+      batch <- FALSE
+    }
+  }
+  
+  if (is.null(opt_args)) {
+    if (!is.null(model$opt_args)) {
+      opt_args <- model$opt_args
+    }
+    else {
+      opt_args <- list()
+    }
+  }
 
   a <- model$a
   b <- model$b
   gamma <- model$gamma
-  alpha <- model$alpha
+  if (is.null(learning_rate)) {
+    alpha <- model$alpha
+  }
+  else {
+    alpha <- learning_rate
+  }
+  if (! is.numeric(alpha) || length(alpha) > 1 || alpha < 0) {
+    stop("learning rate should be a positive number, not ", alpha)
+  }
   negative_sample_rate <- model$negative_sample_rate
   approx_pow <- model$approx_pow
   norig_col <- model$norig_col
@@ -158,7 +249,10 @@ umap_transform <- function(X = NULL, model = NULL,
     pcg_rand <- TRUE
   }
 
-  if(!is.null(X)){
+  # the number of model vertices
+  n_vertices <- NULL
+  Xnames <- NULL
+  if (!is.null(X)){
     if (ncol(X) != norig_col) {
       stop("Incorrect dimensions: X must have ", norig_col, " columns")
     }
@@ -170,8 +264,37 @@ umap_transform <- function(X = NULL, model = NULL,
       X <- as.matrix(X[, indexes])
     }
     n_vertices <- nrow(X)
-  } else if (nn_is_precomputed(nn_method)){
-    n_vertices <- nrow(nn_method$idx)
+    if (!is.null(row.names(X))) {
+      Xnames <- row.names(X)
+    }
+    checkna(X)
+  } else if (nn_is_precomputed(nn_method)) {
+    if (nblocks == 1) {
+      if (length(nn_method) == 1) {
+        graph <- nn_method[[1]]
+      }
+      else {
+        graph <- nn_method
+      }
+      n_vertices <- nrow(graph$idx)
+      check_graph(graph, n_vertices, n_neighbors)
+      if (is.null(Xnames)) {
+        Xnames <- nn_graph_row_names(graph)
+      }
+    }
+    else {
+      stopifnot(length(nn_method) == nblocks)
+      for (i in 1:nblocks) {
+        graph <- nn_method[[i]]
+        if (is.null(n_vertices)) {
+          n_vertices <- nrow(graph$idx)
+        }
+        check_graph(graph, n_vertices, n_neighbors)
+        if (is.null(Xnames)) {
+          Xnames <- nn_graph_row_names(graph)
+        }
+      }
+    }
   }
   
   if (!is.null(init)) {
@@ -198,16 +321,22 @@ umap_transform <- function(X = NULL, model = NULL,
              xdim[1], ", ", xdim[2], "), but was (",
              indim[1], ", ", indim[2], ")")
       }
+      if (is.null(Xnames) && !is.null(row.names(init))) {
+        Xnames <- row.names(init)
+      }
       init_weighted <- NULL
     }
     else {
       stop("Invalid input format for 'init'")
     }
   }
-  tsmessage(
-    "Read ", n_vertices, " rows and found ", ncol(X),
-    " numeric columns"
-  )
+  if (verbose) {
+    x_is_matrix <- methods::is(X, "matrix")
+    tsmessage("Read ", n_vertices, " rows", appendLF = !x_is_matrix)
+    if (x_is_matrix) {
+      tsmessage(" and found ", ncol(X), " numeric columns", time_stamp = FALSE)
+    }
+  }
 
   if (!is.null(scale_info)) {
     X <- apply_scaling(X, scale_info = scale_info, verbose = verbose)
@@ -215,7 +344,6 @@ umap_transform <- function(X = NULL, model = NULL,
 
   adjusted_local_connectivity <- max(0, local_connectivity - 1.0)
 
-  nblocks <- length(metric)
   graph <- NULL
   embedding <- NULL
   for (i in 1:nblocks) {
@@ -239,7 +367,7 @@ umap_transform <- function(X = NULL, model = NULL,
         verbose = verbose
       )
     }
-    if(!is.null(X)){
+    if (!is.null(X)) {
       nn <- annoy_search(Xsub,
                          k = n_neighbors, ann = ann, search_k = search_k,
                          prep_data = TRUE,
@@ -247,10 +375,16 @@ umap_transform <- function(X = NULL, model = NULL,
                          n_threads = n_threads, grain_size = grain_size,
                          verbose = verbose
       )
-    } else if (nn_is_precomputed(nn_method)){
-      nn <- nn_method
+    } else if (nn_is_precomputed(nn_method)) {
+      if (nblocks == 1 && !is.null(nn_method$idx)) {
+        # When there's only one block, the NN graph can be passed directly
+        nn <- nn_method
+      }
+      else {
+        # otherwise we expect a list of NN graphs
+        nn <- nn_method[[i]]
+      }
     }
-
     graph_block <- smooth_knn(nn,
       local_connectivity = adjusted_local_connectivity,
       n_threads = n_threads,
@@ -297,58 +431,88 @@ umap_transform <- function(X = NULL, model = NULL,
   if (n_epochs > 0) {
     graph@x[graph@x < max(graph@x) / n_epochs] <- 0
     graph <- Matrix::drop0(graph)
+
+    # Edges are (i->j) where i (head) is from the new data and j (tail) is
+    # in the model data
+    # Unlike embedding of initial data, the edge list is therefore NOT symmetric
+    # i.e. the presence of (i->j) does NOT mean (j->i) is also present because
+    # i and j now come from different data
+    if (batch) {
+      # This is the same arrangement as Python UMAP
+      graph <- Matrix::t(graph)
+      # ordered indices of the new data nodes. Coordinates are updated 
+      # during optimization
+      positive_head <- Matrix::which(graph != 0, arr.ind = TRUE)[, 2] - 1
+      # unordered indices of the model nodes (some may not have any incoming
+      # edges), these coordinates will NOT update during the optimization
+      positive_tail <- graph@i
+    }
+    else {
+      # unordered indices of the new data nodes. Coordinates are updated 
+      # during optimization
+      positive_head <- graph@i
+      # ordered indices of the model nodes (some may not have any incoming edges)
+      # these coordinates will NOT update during the optimization
+      positive_tail <- Matrix::which(graph != 0, arr.ind = TRUE)[, 2] - 1
+    }
+    
+    n_head_vertices <- nrow(embedding)
+    n_tail_vertices <- nrow(train_embedding)
+    
+    # if batch = TRUE points into the head (length == n_tail_vertices)
+    # if batch = FALSE, points into the tail (length == n_head_vertices)
+    positive_ptr <- graph@p
+
     epochs_per_sample <- make_epochs_per_sample(graph@x, n_epochs)
-
-    positive_head <- graph@i
-    positive_tail <- Matrix::which(graph != 0, arr.ind = TRUE)[, 2] - 1
-
+    
     tsmessage(
       "Commencing optimization for ", n_epochs, " epochs, with ",
       length(positive_head), " positive edges",
       pluralize("thread", n_sgd_threads, " using")
     )
 
-    embedding <- t(embedding)
-    train_embedding <- t(train_embedding)
-    if (tolower(method) == "umap") {
-      embedding <- optimize_layout_umap(
-        head_embedding = embedding,
-        tail_embedding = train_embedding,
-        positive_head = positive_head,
-        positive_tail = positive_tail,
-        n_epochs = n_epochs,
-        n_vertices = n_vertices,
-        epochs_per_sample = epochs_per_sample,
-        a = a, b = b, gamma = gamma,
-        initial_alpha = alpha, negative_sample_rate,
-        approx_pow = approx_pow,
-        pcg_rand = pcg_rand,
-        n_threads = n_sgd_threads,
-        grain_size = grain_size,
-        move_other = FALSE,
-        verbose = verbose
-      )
+    method <- tolower(method)
+    if (method == "umap") {
+      method_args <- list(a = a, b = b, gamma = gamma, approx_pow = approx_pow)
     }
     else {
-      embedding <- optimize_layout_tumap(
-        head_embedding = embedding,
-        tail_embedding = train_embedding,
-        positive_head = positive_head,
-        positive_tail = positive_tail,
-        n_epochs = n_epochs,
-        n_vertices, epochs_per_sample,
-        initial_alpha = alpha,
-        negative_sample_rate = negative_sample_rate,
-        pcg_rand = pcg_rand,
-        n_threads = n_sgd_threads,
-        grain_size = grain_size,
-        move_other = FALSE,
-        verbose = verbose
-      )
+      method_args <- list()
     }
+    
+    full_opt_args <- get_opt_args(opt_args, alpha)
+    
+    embedding <- t(embedding)
+    row.names(train_embedding) <- NULL
+    train_embedding <- t(train_embedding)
+    embedding <- optimize_layout_r(
+      head_embedding = embedding,
+      tail_embedding = train_embedding,
+      positive_head = positive_head,
+      positive_tail = positive_tail,
+      positive_ptr = positive_ptr,
+      n_epochs = n_epochs,
+      n_head_vertices = n_head_vertices,
+      n_tail_vertices = n_tail_vertices,
+      epochs_per_sample = epochs_per_sample,
+      method = tolower(method),
+      method_args = method_args,
+      initial_alpha = alpha / 4.0,
+      opt_args = full_opt_args,
+      negative_sample_rate = negative_sample_rate,
+      pcg_rand = pcg_rand,
+      batch = batch,
+      n_threads = n_sgd_threads,
+      grain_size = grain_size,
+      move_other = FALSE,
+      verbose = verbose,
+      epoch_callback = epoch_callback
+    )
     embedding <- t(embedding)
   }
   tsmessage("Finished")
+  if (!is.null(Xnames)) {
+    row.names(embedding) <- Xnames
+  }
   embedding
 }
 

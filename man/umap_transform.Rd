@@ -16,7 +16,11 @@ umap_transform(
   n_sgd_threads = 0,
   grain_size = 1,
   verbose = FALSE,
-  init = "weighted"
+  init = "weighted",
+  batch = NULL,
+  learning_rate = NULL,
+  opt_args = NULL,
+  epoch_callback = NULL
 )
 }
 \arguments{
@@ -26,13 +30,16 @@ the \code{model}.}
 
 \item{model}{Data associated with an existing embedding.}
 
-\item{nn_method}{Optional pre-calculated nearest neighbor data. It must be a 
-list consisting of two elements:
+\item{nn_method}{Optional pre-calculated nearest neighbor data. 
+
+The format is 
+  a list consisting of two elements:
   \itemize{
-    \item \code{"idx"}. A \code{n_vertices x n_neighbors} matrix
-    containing the integer indexes of the nearest neighbors in \code{X}. Each
-    vertex is considered to be its own nearest neighbor, i.e.
-    \code{idx[, 1] == 1:n_vertices}.
+    \item \code{"idx"}. A \code{n_vertices x n_neighbors} matrix where 
+    \code{n_vertices} is the number of items to be transformed. The contents 
+    of the matrix should be the integer indexes of the data used to generate
+    the \code{model}, which are the \code{n_neighbors}-nearest neighbors of
+    the data to be transformed.
     \item \code{"dist"}. A \code{n_vertices x n_neighbors} matrix
     containing the distances of the nearest neighbors.
   }
@@ -71,8 +78,10 @@ descent). Default is half the number of concurrent threads supported by the
 system.}
 
 \item{n_sgd_threads}{Number of threads to use during stochastic gradient
-descent. If set to > 1, then results will not be reproducible, even if
-`set.seed` is called with a fixed seed before running.}
+descent. If set to > 1, then be aware that if \code{batch = FALSE}, results
+will \emph{not} be reproducible, even if \code{set.seed} is called with a
+fixed seed before running. Set to \code{"auto"} to use the same value as
+\code{n_threads}.}
 
 \item{grain_size}{Minimum batch size for multithreading. If the number of
 items to process in a thread falls below this number, then no threads will
@@ -94,6 +103,64 @@ be used. Used in conjunction with \code{n_threads} and
     dimensions the same as \code{(nrow(X), ncol(model$embedding))}.
   }
 This parameter should be used in preference to \code{init_weighted}.}
+
+\item{batch}{If \code{TRUE}, then embedding coordinates are updated at the
+end of each epoch rather than during the epoch. In batch mode, results are
+reproducible with a fixed random seed even with \code{n_sgd_threads > 1},
+at the cost of a slightly higher memory use. You may also have to modify
+\code{learning_rate} and increase \code{n_epochs}, so whether this provides
+a speed increase over the single-threaded optimization is likely to be
+dataset and hardware-dependent. If \code{NULL}, the transform will use the
+value provided in the \code{model}, if available. Default: \code{FALSE}.}
+
+\item{learning_rate}{Initial learning rate used in optimization of the
+coordinates. This overrides the value associated with the \code{model}.
+This should be left unspecified under most circumstances.}
+
+\item{opt_args}{A list of optimizer parameters, used when 
+\code{batch = TRUE}. The default optimization method used is Adam (Kingma
+and Ba, 2014).
+\itemize{
+  \item \code{method} The optimization method to use. Either \code{"adam"} 
+  or \code{"sgd"} (stochastic gradient descent). Default: \code{"adam"}.
+  \item \code{beta1} (Adam only). The weighting parameter for the
+  exponential moving average of the first moment estimator. Effectively the
+  momentum parameter. Should be a floating point value between 0 and 1.
+  Higher values can smooth oscillatory updates in poorly-conditioned
+  situations and may allow for a larger \code{learning_rate} to be
+  specified, but too high can cause divergence. Default: \code{0.5}.
+  \item \code{beta2} (Adam only). The weighting parameter for the
+  exponential moving average of the uncentered second moment estimator.
+  Should be a floating point value between 0 and 1. Controls the degree of
+  adaptivity in the step-size. Higher values put more weight on previous
+  time steps. Default: \code{0.9}.
+  \item \code{eps} (Adam only). Intended to be a small value to prevent
+  division by zero, but in practice can also affect convergence due to its
+  interaction with \code{beta2}. Higher values reduce the effect of the
+  step-size adaptivity and bring the behavior closer to stochastic gradient
+  descent with momentum. Typical values are between 1e-8 and 1e-3. Default:
+  \code{1e-7}.
+  \item \code{alpha} The initial learning rate. Default: the value of the 
+  \code{learning_rate} parameter.
+}
+If \code{NULL}, the transform will use the value provided in the 
+\code{model}, if available.}
+
+\item{epoch_callback}{A function which will be invoked at the end of every
+epoch. Its signature should be:
+\code{(epoch, n_epochs, coords, fixed_coords)}, where:
+\itemize{
+  \item \code{epoch} The current epoch number (between \code{1} and 
+  \code{n_epochs}).
+  \item \code{n_epochs} Number of epochs to use during the optimization of
+  the embedded coordinates.
+  \item \code{coords} The embedded coordinates as of the end of the current
+  epoch, as a matrix with dimensions (N, \code{n_components}).
+  \item \code{fixed_coords} The originally embedded coordinates from the
+  \code{model}. These are fixed and do not change. A matrix with dimensions 
+  (Nmodel, \code{n_components}) where \code{Nmodel} is the number of
+  observations in the original data.
+}}
 }
 \value{
 A matrix of coordinates for \code{X} transformed into the space

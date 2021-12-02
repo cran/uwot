@@ -31,7 +31,11 @@ lvish(
   ret_nn = FALSE,
   ret_extra = c(),
   tmpdir = tempdir(),
-  verbose = getOption("verbose", TRUE)
+  verbose = getOption("verbose", TRUE),
+  batch = FALSE,
+  opt_args = NULL,
+  epoch_callback = NULL,
+  pca_method = NULL
 )
 }
 \arguments{
@@ -225,9 +229,10 @@ will be temporarily written to disk in the location determined by
 \code{\link[base]{tempfile}}.}
 
 \item{n_sgd_threads}{Number of threads to use during stochastic gradient
-descent. If set to > 1, then results will not be reproducible, even if
-`set.seed` is called with a fixed seed before running. Set to
-\code{"auto"} go use the same value as \code{n_threads}.}
+descent. If set to > 1, then be aware that if \code{batch = FALSE}, results
+will \emph{not} be reproducible, even if \code{set.seed} is called with a
+fixed seed before running. Set to \code{"auto"} to use the same value as
+\code{n_threads}.}
 
 \item{grain_size}{The minimum amount of work to do on each thread. If this
 value is set high enough, then less than \code{n_threads} or
@@ -286,7 +291,7 @@ data if modifying the \code{scale} parameter.}
 \item{ret_extra}{A vector indicating what extra data to return. May contain
 any combination of the following strings:
 \itemize{
-  \item \code{"nn"} same as setting `ret_nn = TRUE`.
+  \item \code{"nn"} same as setting \code{ret_nn = TRUE}.
   \item \code{"P"} the high dimensional probability matrix. The graph
   is returned as a sparse symmetric N x N matrix of class
   \link[Matrix]{dgCMatrix-class}, where a non-zero entry (i, j) gives the
@@ -296,8 +301,8 @@ any combination of the following strings:
   not be sampled by the probabilistic edge sampling employed for
   optimization and therefore the number of non-zero elements in the matrix
   is dependent on \code{n_epochs}. If you are only interested in the fuzzy
-  input graph (e.g. for clustering), setting `n_epochs = 0` will avoid any
-  further sparsifying.
+  input graph (e.g. for clustering), setting \code{n_epochs = 0} will avoid
+  any further sparsifying.
 }}
 
 \item{tmpdir}{Temporary directory to store nearest neighbor indexes during
@@ -306,6 +311,77 @@ only written to disk if \code{n_threads > 1} and
 \code{nn_method = "annoy"}; otherwise, this parameter is ignored.}
 
 \item{verbose}{If \code{TRUE}, log details to the console.}
+
+\item{batch}{If \code{TRUE}, then embedding coordinates are updated at the
+end of each epoch rather than during the epoch. In batch mode, results are
+reproducible with a fixed random seed even with \code{n_sgd_threads > 1},
+at the cost of a slightly higher memory use. You may also have to modify
+\code{learning_rate} and increase \code{n_epochs}, so whether this provides
+a speed increase over the single-threaded optimization is likely to be
+dataset and hardware-dependent.}
+
+\item{opt_args}{A list of optimizer parameters, used when 
+\code{batch = TRUE}. The default optimization method used is Adam (Kingma
+and Ba, 2014).
+\itemize{
+  \item \code{method} The optimization method to use. Either \code{"adam"} 
+  or \code{"sgd"} (stochastic gradient descent). Default: \code{"adam"}.
+  \item \code{beta1} (Adam only). The weighting parameter for the
+  exponential moving average of the first moment estimator. Effectively the
+  momentum parameter. Should be a floating point value between 0 and 1.
+  Higher values can smooth oscillatory updates in poorly-conditioned
+  situations and may allow for a larger \code{learning_rate} to be
+  specified, but too high can cause divergence. Default: \code{0.5}.
+  \item \code{beta2} (Adam only). The weighting parameter for the
+  exponential moving average of the uncentered second moment estimator.
+  Should be a floating point value between 0 and 1. Controls the degree of
+  adaptivity in the step-size. Higher values put more weight on previous
+  time steps. Default: \code{0.9}.
+  \item \code{eps} (Adam only). Intended to be a small value to prevent
+  division by zero, but in practice can also affect convergence due to its
+  interaction with \code{beta2}. Higher values reduce the effect of the
+  step-size adaptivity and bring the behavior closer to stochastic gradient
+  descent with momentum. Typical values are between 1e-8 and 1e-3. Default:
+  \code{1e-7}.
+  \item \code{alpha} The initial learning rate. Default: the value of the 
+  \code{learning_rate} parameter.
+}}
+
+\item{epoch_callback}{A function which will be invoked at the end of every
+epoch. Its signature should be: \code{(epoch, n_epochs, coords)}, where:
+\itemize{
+  \item \code{epoch} The current epoch number (between \code{1} and 
+  \code{n_epochs}).
+  \item \code{n_epochs} Number of epochs to use during the optimization of
+  the embedded coordinates.
+  \item \code{coords} The embedded coordinates as of the end of the current
+  epoch, as a matrix with dimensions (N, \code{n_components}).
+}}
+
+\item{pca_method}{Method to carry out any PCA dimensionality reduction when
+the \code{pca} parameter is specified. Allowed values are: 
+\itemize{
+  \item{\code{"irlba"}}. Uses \code{\link[irlba]{prcomp_irlba}} from the
+  \href{https://cran.r-project.org/package=irlba}{irlba} package.
+  \item{\code{"rsvd"}}. Uses 5 iterations of \code{\link[irlba]{svdr}} from
+  the \href{https://cran.r-project.org/package=irlba}{irlba} package.
+  This is likely to give much faster but potentially less accurate results
+  than using \code{"irlba"}. For the purposes of nearest neighbor 
+  calculation and coordinates initialization, any loss of accuracy doesn't
+  seem to matter much.
+  \item{\code{"bigstatsr"}}. Uses \code{\link[bigstatsr]{big_randomSVD}}
+  from the \href{https://cran.r-project.org/package=bigstatsr}{bigstatsr}
+  package. The SVD methods used in \code{bigstatsr} may be faster on 
+  systems without access to efficient linear algebra libraries (e.g. 
+  Windows). \strong{Note}: \code{bigstatsr} is \emph{not} a dependency of
+  uwot: if you choose to use this package for PCA, you \emph{must} install
+  it yourself.
+  \item{\code{"svd"}}. Uses \code{\link[base]{svd}} for the SVD. This is
+  likely to be slow for all but the smallest datasets.
+  \item{\code{"auto"}} (the default). Uses \code{"irlba"}, unless more than
+  50% of the full set of singular vectors would be calculated, in which
+  case \code{"svd"} is used.
+}}
 }
 \value{
 A matrix of optimized coordinates, or:
@@ -347,9 +423,6 @@ following:
   \code{\link{umap}}, but may need to be increased further depending on your
   dataset. Using \code{init = "spectral"} can help.
 }
-
-Note that the \code{grain_size} parameter no longer does anything and is
-present to avoid break backwards compatibility only.
 }
 \examples{
 # Default number of epochs is much larger than for UMAP, assumes random

@@ -481,3 +481,78 @@ res_trans_cor2 <- umap_transform(x2m(iris[11:20, ]), res_cor, n_threads = 0, ver
 expect_ok_matrix(res_trans_cor2)
 expect_gt(sum((res_trans_cor - res_trans_cor2) ^ 2), 1e-3)
 
+
+# 81: Preserve row names
+set.seed(42)
+xnames <-
+  data.frame(matrix(rnorm(10 * 4), nrow = 10), row.names = letters[1:10])
+xumap <-
+  umap(
+    xnames,
+    n_neighbors = 4,
+    verbose = FALSE,
+    n_threads = 0,
+    ret_model = TRUE,
+    ret_nn = TRUE
+  )
+expect_equal(row.names(xumap$embedding), row.names(xnames))
+expect_equal(row.names(xumap$nn$euclidean$idx), row.names(xnames))
+expect_equal(row.names(xumap$nn$euclidean$dist), row.names(xnames))
+
+first_coords <- c()
+test_callback <- function(epochs, n_epochs, coords) {
+  first_coords <<- c(first_coords, coords[1, 1])
+}
+set.seed(42)
+ibatch <- tumap(iris10, n_neighbors = 4, n_epochs = 2, learning_rate = 0.5,
+                init = "spca", verbose = FALSE, batch = TRUE,
+                n_threads = 0, n_sgd_threads = 0, ret_model = TRUE,
+                epoch_callback = test_callback)
+expect_equal(length(first_coords), 2)
+
+set.seed(42)
+ibatch2 <- tumap(iris10, n_neighbors = 4, n_epochs = 2, learning_rate = 0.5,
+                init = "spca", verbose = FALSE, batch = TRUE,
+                n_threads = 0, n_sgd_threads = 2, ret_model = TRUE)
+expect_equal(ibatch$embedding, ibatch2$embedding)
+
+itest <- x2m(iris[11:20, ])
+first_coords <- c()
+fixed_first_coords <- c()
+test_transform_callback <- function(epochs, n_epochs, coords, fixed_coords) {
+  first_coords <<- c(first_coords, coords[1, 1])
+  fixed_first_coords <<- c(fixed_first_coords, fixed_coords[1, 1])
+}
+set.seed(42)
+ibatchtest <- umap_transform(itest, ibatch, epoch_callback = test_transform_callback, n_epochs = 5)
+expect_equal(length(first_coords), 5)
+expect_equal(length(fixed_first_coords), 5)
+# coords don't actually change on the first epoch
+expect_equal(length(unique(first_coords)), 4)
+# if coords are fixed they should be the same at each epoch
+expect_equal(length(unique(fixed_first_coords)), 1)
+
+set.seed(42)
+ibatchtest2 <- umap_transform(itest, ibatch, n_sgd_threads = 2, n_epochs = 5)
+expect_equal(ibatchtest, ibatchtest2)
+
+
+oargs_umap <- tumap(iris10, n_neighbors = 4, n_epochs = 0, learning_rate = 0.5,
+                init = "spca", verbose = FALSE, batch = TRUE,
+                n_threads = 0, n_sgd_threads = 0, ret_model = TRUE,
+                opt_args = list(alpha = 0.4, beta1 = 0.1, beta2 = 0.2, eps = 1e-3))
+expect_equal(length(oargs_umap$opt_args), 5)
+expect_equal(oargs_umap$opt_args$method, "adam")
+expect_equal(oargs_umap$opt_args$alpha, 0.4)
+expect_equal(oargs_umap$opt_args$beta1, 0.1)
+expect_equal(oargs_umap$opt_args$beta2, 0.2)
+expect_equal(oargs_umap$opt_args$eps, 1e-3)
+
+
+oargs_umap <- tumap(iris10, n_neighbors = 4, n_epochs = 2, learning_rate = 0.5,
+                    init = "spca", verbose = FALSE, batch = TRUE,
+                    n_threads = 0, n_sgd_threads = 0, ret_model = TRUE,
+                    opt_args = list(method = "sgd", alpha = 0.4))
+expect_equal(length(oargs_umap$opt_args), 2)
+expect_equal(oargs_umap$opt_args$method, "sgd")
+expect_equal(oargs_umap$opt_args$alpha, 0.4)

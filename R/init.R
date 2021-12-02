@@ -27,43 +27,39 @@ laplacian_eigenmap <- function(A, ndim = 2, verbose = FALSE) {
   # This effectively row-normalizes A: colSums is normally faster than rowSums
   # and because A is symmetric, they're equivalent
   M <- A / colSums(A)
-  connected <- connected_components(M)
-  if (connected$n_components > 1) {
-    tsmessage(
-      "Found ", connected$n_components, " connected components, ",
-      "initializing each component separately"
-    )
-    fn_name <- as.character(match.call()[[1]])
-    return(subgraph_init(fn_name, connected,
-      A = A, ndim = ndim,
-      verbose = verbose
-    ))
-  }
 
-  res <- NULL
-  k <- ndim + 1
-  n <- nrow(M)
-  suppressWarnings(
-    res <- tryCatch(RSpectra::eigs(M,
-      k = k, which = "LM",
-      opt = list(tol = 1e-4)
-    ),
-    error = function(c) {
-      NULL
-    }
-    )
-  )
+  res <- rspectra_eigs_asym(M, ndim)
 
   if (is.null(res) || ncol(res$vectors) < ndim) {
     message(
       "Laplacian Eigenmap failed to converge, ",
       "using random initialization instead"
     )
+    n <- nrow(M)
     return(rand_init(n, ndim))
   }
+  
+  # return the smallest eigenvalues
+  as.matrix(Re(res$vectors[, 2:(ndim + 1)]))
+}
 
-  vecs <- as.matrix(res$vectors[, 2:(ndim + 1)])
-  Re(vecs)
+form_normalized_laplacian <- function(A) {
+  # Normalized Laplacian: clear and close to UMAP code, but very slow in R
+  # I <- diag(1, nrow = n, ncol = n)
+  # D <- diag(1 / sqrt(colSums(A)))
+  # L <- I - D %*% A %*% D
+  
+  # A lot faster (order of magnitude when n = 1000)
+  Dsq <- sqrt(Matrix::colSums(A))
+  L <- -Matrix::t(A / Dsq) / Dsq
+  Matrix::diag(L) <- 1 + Matrix::diag(L)
+  L
+}
+
+# Return the ndim eigenvectors associated with the ndim largest eigenvalues
+sort_eigenvectors <- function(eig_res, ndim) {
+  vec_indices <- rev(order(eig_res$values, decreasing = TRUE)[1:ndim])
+  as.matrix(Re(eig_res$vectors[, vec_indices]))
 }
 
 # Use a normalized Laplacian.
@@ -73,60 +69,55 @@ normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE) {
     return(rand_init(nrow(A), ndim))
   }
   tsmessage("Initializing from normalized Laplacian")
-  connected <- connected_components(A)
-  if (connected$n_components > 1) {
-    tsmessage(
-      "Found ", connected$n_components, " connected components, ",
-      "initializing each component separately"
-    )
-    fn_name <- as.character(match.call()[[1]])
-    return(subgraph_init(fn_name, connected,
-      A = A, ndim = ndim,
-      verbose = verbose
-    ))
-  }
 
-  n <- nrow(A)
-  # Normalized Laplacian: clear and close to UMAP code, but very slow in R
-  # I <- diag(1, nrow = n, ncol = n)
-  # D <- diag(1 / sqrt(colSums(A)))
-  # L <- I - D %*% A %*% D
+  L <- form_normalized_laplacian(A)
+  res <- rspectra_eigs_sym(L, ndim)
 
-  # A lot faster (order of magnitude when n = 1000)
-  Dsq <- sqrt(Matrix::colSums(A))
-  L <- -Matrix::t(A / Dsq) / Dsq
-  Matrix::diag(L) <- 1 + Matrix::diag(L)
-
-  k <- ndim + 1
-  opt <- list(tol = 1e-4)
-  suppressWarnings(
-    res <- tryCatch(RSpectra::eigs_sym(L, k = k, which = "SM", opt = opt),
-      error = function(c) {
-        NULL
-      }
-    )
-  )
   if (is.null(res) || ncol(res$vectors) < ndim) {
-    suppressWarnings(
-      res <- tryCatch(RSpectra::eigs_sym(L,
-        k = k, which = "LM", sigma = 0,
-        opt = opt
-      ),
-      error = function(c) {
-        NULL
-      }
-      )
+    message(
+      "Spectral initialization failed to converge, ",
+      "using random initialization instead"
     )
-    if (is.null(res) || ncol(res$vectors) < ndim) {
-      message(
-        "Spectral initialization failed to converge, ",
-        "using random initialization instead"
-      )
-      return(rand_init(n, ndim))
-    }
+    n <- nrow(A)
+    return(rand_init(n, ndim))
   }
-  vec_indices <- rev(order(res$values, decreasing = TRUE)[1:ndim])
-  as.matrix(Re(res$vectors[, vec_indices]))
+  sort_eigenvectors(res, ndim)
+}
+
+irlba_eigs_asym <- function(L, ndim) {
+  suppressWarnings(res <- tryCatch({
+    res <- irlba::partial_eigen(
+      L,
+      n = ndim + 1,
+      symmetric = FALSE,
+      smallest = TRUE,
+      tol = 1e-3,
+      maxit = 1000,
+      verbose = TRUE
+    )
+    res$values <- sqrt(res$values)
+    res
+  },
+  error = function(c) {
+    NULL
+  }))
+}
+
+irlba_eigs_sym <- function(L, ndim) {
+  suppressWarnings(res <- tryCatch(
+    res <- irlba::partial_eigen(
+      L,
+      n = ndim + 1,
+      symmetric = TRUE,
+      smallest = TRUE,
+      tol = 1e-3,
+      maxit = 1000,
+      verbose = TRUE
+    ),
+    error = function(c) {
+      NULL
+    }
+  ))
 }
 
 # Use irlba's partial_eigen instead of RSpectra
@@ -137,33 +128,18 @@ irlba_normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE) {
   }
   tsmessage("Initializing from normalized Laplacian (using irlba)")
 
-  n <- nrow(A)
-  Dsq <- sqrt(Matrix::colSums(A))
-  L <- -Matrix::t(A / Dsq) / Dsq
-  Matrix::diag(L) <- 1 + Matrix::diag(L)
+  L <- form_normalized_laplacian(A)
+  res <- irlba_eigs_sym(L, ndim)
 
-  k <- ndim + 1
-
-  suppressWarnings(
-    res <- tryCatch(res <- irlba::partial_eigen(L,
-      n = k, symmetric = TRUE,
-      smallest = TRUE, tol = 1e-3,
-      maxit = 1000, verbose = TRUE
-    ),
-    error = function(c) {
-      NULL
-    }
-    )
-  )
   if (is.null(res) || ncol(res$vectors) < ndim) {
     message(
       "Spectral initialization failed to converge, ",
       "using random initialization instead"
     )
+    n <- nrow(A)
     return(rand_init(n, ndim))
   }
-  vec_indices <- rev(order(res$values, decreasing = TRUE)[1:ndim])
-  as.matrix(Re(res$vectors[, vec_indices]))
+  sort_eigenvectors(res, ndim)
 }
 
 
@@ -175,18 +151,7 @@ spectral_init <- function(A, ndim = 2, verbose = FALSE) {
     return(rand_init(nrow(A), ndim))
   }
   tsmessage("Initializing from normalized Laplacian + noise")
-  connected <- connected_components(A)
-  if (connected$n_components > 1) {
-    tsmessage(
-      "Found ", connected$n_components, " connected components, ",
-      "initializing each component separately"
-    )
-    fn_name <- as.character(match.call()[[1]])
-    return(subgraph_init(fn_name, connected,
-      A = A, ndim = ndim,
-      verbose = verbose
-    ))
-  }
+
   coords <- normalized_laplacian_init(A, ndim, verbose = FALSE)
   expansion <- 10.0 / max(abs(coords))
   (coords * expansion) + matrix(stats::rnorm(n = prod(dim(coords)), sd = 0.0001),
@@ -208,29 +173,7 @@ irlba_spectral_init <- function(A, ndim = 2, verbose = FALSE) {
   )
 }
 
-# Recursively calls the spectral initialization function named fn_name
-# for each subgraph specified by connected
-subgraph_init <- function(fn_name, connected, A, ndim = 2, verbose = FALSE) {
-  init <- NULL
-  for (i in 1:connected$n_components) {
-    subg_idx <- connected$labels == i - 1
-    subg <- A[subg_idx, subg_idx]
-    tsmessage("Initializing subcomponent of size ", nrow(subg))
-    init_conn <- do.call(fn_name, list(
-      A = subg, ndim = ndim,
-      verbose = verbose
-    ))
-    if (is.null(init)) {
-      init <- init_conn
-    }
-    else {
-      init <- rbind(init, init_conn)
-    }
-  }
-  init
-}
-
-# Return the number of connected components in a graph (respresented as a
+# Return the number of connected components in a graph (represented as a
 # sparse matrix).
 connected_components <- function(X) {
   Xt <- Matrix::t(X)
@@ -258,9 +201,13 @@ shrink_coords <- function(X, sdev = 1e-4) {
 }
 
 # PCA
-pca_init <- function(X, ndim = 2, center = TRUE, verbose = FALSE) {
+pca_init <- function(X, ndim = 2, center = TRUE, pca_method = "irlba",
+                     verbose = FALSE) {
   tsmessage("Initializing from PCA")
-  pca_scores(X, ncol = ndim, center = center, verbose = verbose)
+  pca_scores(X,
+    ncol = ndim, center = center, pca_method = pca_method,
+    verbose = verbose
+  )
 }
 
 
@@ -268,7 +215,7 @@ pca_init <- function(X, ndim = 2, center = TRUE, verbose = FALSE) {
 # Returns the score matrix unless ret_extra is TRUE, in which case a list
 # is returned also containing the eigenvalues
 pca_scores <- function(X, ncol = min(dim(X)), center = TRUE, ret_extra = FALSE,
-                       verbose = FALSE) {
+                       pca_method = "auto", verbose = FALSE) {
   if (methods::is(X, "dist")) {
     res_mds <- stats::cmdscale(X, x.ret = TRUE, eig = TRUE, k = ncol)
 
@@ -286,14 +233,40 @@ pca_scores <- function(X, ncol = min(dim(X)), center = TRUE, ret_extra = FALSE,
 
   # irlba warns about using too large a percentage of total singular value
   # so don't use if dataset is small compared to ncol
-  if (ncol < 0.5 * min(dim(X))) {
-    return(irlba_scores(X,
-      ncol = ncol, center = center, ret_extra = ret_extra,
-      verbose = verbose
-    ))
+  if (pca_method == "auto") {
+    if (ncol < 0.5 * min(dim(X))) {
+      pca_method <- "irlba"
+    } else {
+      pca_method <- "svd"
+    }
   }
 
-  svd_scores(X = X, ncol = ncol, center = center, ret_extra = ret_extra, verbose = verbose)
+  if (pca_method == "bigstatsr") {
+    if (!bigstatsr_is_installed()) {
+      warning(
+        "PCA via bigstatsr requires the 'bigstatsr' package. ",
+        "Please install it. Falling back to 'irlba'"
+      )
+      pca_method <- "irlba"
+    }
+  }
+
+  tsmessage("Using '", pca_method, "' for PCA")
+  pca_fun <- switch(pca_method,
+    irlba = irlba_scores,
+    svdr = irlba_svdr_scores,
+    svd = svd_scores,
+    bigstatsr = bigstatsr_scores,
+    stop("BUG: unknown svd method '", pca_method, "'")
+  )
+
+  pca_fun(
+    X = X,
+    ncol = ncol,
+    center = center,
+    ret_extra = ret_extra,
+    verbose = verbose
+  )
 }
 
 # Get scores by SVD
@@ -329,8 +302,7 @@ svd_scores <- function(X, ncol = min(dim(X)), center = TRUE, ret_extra = FALSE,
       rotation = rotation,
       center = xcenter
     )
-  }
-  else {
+  } else {
     scores
   }
 }
@@ -341,20 +313,140 @@ irlba_scores <- function(X, ncol, center = TRUE, ret_extra = FALSE, verbose = FA
     n = ncol, retx = TRUE, center = center,
     scale = FALSE
   )
-  if (verbose) {
-    varex <- sum(res$sdev[1:ncol]^2) / res$totalvar
-    tsmessage(
-      "PCA: ", ncol, " components explained ", formatC(varex * 100),
-      "% variance"
-    )
-  }
+  report_varex(res, verbose)
   if (ret_extra) {
     list(scores = res$x, rotation = res$rotation, center = res$center)
-  }
-  else {
+  } else {
     res$x
   }
 }
+
+report_varex <- function(res, verbose = FALSE) {
+  if (verbose) {
+    ncol <- ncol(res$rotation)
+    varex <- sum(res$sdev[1:ncol]^2) / res$totalvar
+    tsmessage(
+      "PCA: ",
+      ncol,
+      " components explained ",
+      formatC(varex * 100),
+      "% variance"
+    )
+  }
+}
+
+# This function taken from irlba and modified to use irlba::svdr rather
+# than irlba::irlba
+prcomp_rsvd <- function(x, n = 3, retx = TRUE, center = TRUE, scale. = FALSE,
+                        ...) {
+  a <- names(as.list(match.call()))
+  ans <- list(scale = scale.)
+  if ("tol" %in% a) {
+    warning("The `tol` truncation argument from `prcomp` is not supported by\n`prcomp_rsvd`. If specified, `tol` is passed to the `irlba` function to\ncontrol that algorithm's convergence tolerance. See `?prcomp_irlba` for help.")
+  }
+  if (is.data.frame(x)) {
+    x <- as.matrix(x)
+  }
+  args <- list(x = x, k = n)
+  if (is.logical(center)) {
+    if (center) {
+      args$center <- colMeans(x)
+    }
+  } else {
+    args$center <- center
+  }
+  if (is.logical(scale.)) {
+    if (is.numeric(args$center)) {
+      f <- function(i) {
+        sqrt(sum((x[, i] - args$center[i])^2) / (nrow(x) -
+          1L))
+      }
+      scale. <- vapply(seq(ncol(x)), f, pi, USE.NAMES = FALSE)
+      if (ans$scale) {
+        ans$totalvar <- ncol(x)
+      } else {
+        ans$totalvar <- sum(scale.^2)
+      }
+    } else {
+      if (ans$scale) {
+        scale. <- apply(x, 2L, function(v) {
+          sqrt(sum(v^2) / max(
+            1,
+            length(v) - 1L
+          ))
+        })
+        f <- function(i) {
+          sqrt(sum((x[, i] / scale.[i])^2) / (nrow(x) -
+            1L))
+        }
+        ans$totalvar <- sum(vapply(seq(ncol(x)), f, pi,
+          USE.NAMES = FALSE
+        )^2)
+      } else {
+        f <- function(i) sum(x[, i]^2) / (nrow(x) - 1L)
+        ans$totalvar <- sum(vapply(seq(ncol(x)), f, pi,
+          USE.NAMES = FALSE
+        ))
+      }
+    }
+    if (ans$scale) {
+      args$scale <- scale.
+    }
+  } else {
+    args$scale <- scale.
+    f <- function(i) {
+      sqrt(sum((x[, i] / scale.[i])^2) / (nrow(x) -
+        1L))
+    }
+    ans$totalvar <- sum(vapply(seq(ncol(x)), f, pi, USE.NAMES = FALSE))
+  }
+  if (!missing(...)) {
+    args <- c(args, list(...))
+  }
+
+  s <- do.call(irlba::svdr, args = args)
+  ans$sdev <- s$d / sqrt(max(1, nrow(x) - 1))
+  ans$rotation <- s$v
+  colnames(ans$rotation) <- paste("PC", seq(1, ncol(ans$rotation)),
+    sep = ""
+  )
+  ans$center <- args$center
+  if (retx) {
+    ans <- c(ans, list(x = sweep(s$u, 2, s$d, FUN = `*`)))
+    colnames(ans$x) <- paste("PC", seq(1, ncol(ans$rotation)),
+      sep = ""
+    )
+  }
+  class(ans) <- c("irlba_prcomp", "prcomp")
+  ans
+}
+
+irlba_svdr_scores <-
+  function(X,
+           ncol,
+           center = TRUE,
+           ret_extra = FALSE,
+           verbose = FALSE) {
+    # 5 iterations is the default for scikit-learn TruncatedSVD
+    res <- prcomp_rsvd(
+      X,
+      n = ncol,
+      retx = TRUE,
+      center = center,
+      scale. = FALSE,
+      it = 5
+    )
+    report_varex(res, verbose)
+    if (ret_extra) {
+      list(
+        scores = res$x,
+        rotation = res$rotation,
+        center = res$center
+      )
+    } else {
+      res$x
+    }
+  }
 
 init_is_spectral <- function(init) {
   res <- pmatch(tolower(init), c(

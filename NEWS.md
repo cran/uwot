@@ -1,3 +1,77 @@
+# uwot 0.1.11
+
+## New features
+
+* New parameter: `batch`. If `TRUE`, then results are reproducible when
+`n_sgd_threads > 1` (as long as you use `set.seed`). The price to be paid is
+that the optimization is slightly less efficient (because coordinates are not
+updated as quickly and hence gradients are staler for longer), so it is highly
+recommended to set `n_epochs = 500` or higher. Thank you to 
+[Aaron Lun](https://github.com/LTLA) who not only came up with a way to
+implement this feature, but also wrote an entire 
+[C++ implementation of UMAP](https://github.com/LTLA/umappp) which does it 
+(<https://github.com/jlmelville/uwot/issues/83>).
+* New parameter: `opt_args`. The default optimization method when `batch = TRUE`
+is [Adam](https://arxiv.org/abs/1412.6980). You can control its parameters by
+passing them in the `opt_args` list. As Adam is a momentum-based method it
+requires extra storage of previous gradient data. To avoid the extra memory
+overhead you can also use `opt_args = list(method = "sgd")` to use a stochastic
+gradient descent method like that used when `batch = FALSE`.
+* New parameter: `epoch_callback`. You may now pass a function which will be
+invoked at the end of each epoch. Mainly useful for producing an image of the
+state of the embedding at different points during the optimization. This is
+another feature taken from [umappp](https://github.com/LTLA/umappp).
+* New parameter: `pca_method`, used when the `pca` parameter is supplied to
+reduce the initial dimensionality of the data. This controls which method is
+used to carry out the PCA and can be set to one of:
+    * `"irlba"` which uses `irlba::irlba` to calculate a truncated SVD. If this
+    routine deems that you are trying to extract 50% or more of the singular 
+    vectors, you will see a warning to that effect logged to the console.
+    * `"rsvd"`, which uses `irlba::svdr` for truncated SVD. This method uses a
+    small number of iterations which should give an accuracy/speed up trade-off
+    similar to that of the 
+    [scikit-learn TruncatedSVD](https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.TruncatedSVD.html#sklearn.decomposition.TruncatedSVD)
+    method. This can be much faster than using `"irlba"` but potentially at a
+    cost in accuracy. However, for the purposes of dimensionality reduction as
+    input to nearest neighbor search, this doesn't seem to matter much.
+    * `"bigstatsr"`, which uses the [bigstatsr](https://cran.r-project.org/package=bigstatsr) 
+    package will be used. **Note**: that this is *not* a dependency of `uwot`.
+    If you want to use `bigstatsr`, you must install it yourself. On platforms
+    without easy access to fast linear algebra libraries (e.g. Windows), using
+    `bigstatsr` may give a speed up to PCA calculations.
+    * `"svd"`, which uses `base::svd`. **Warning**: this is likely to be very
+    slow for most datasets and exists as a fallback for small datasets where
+    the `"irlba"` method would print a warning.
+    * `"auto"` (the default) which uses `"irlba"` to calculate a truncated SVD,
+    unless you are attempting to extract 50% or more of the singular vectors,
+    in which case `"svd"` is used.
+
+## Bug fixes and minor improvements
+
+* If row names are provided in the input data (or nearest neighbor data, or
+initialization data if it's a matrix), this will be used to name the rows of the
+output embedding (<https://github.com/jlmelville/uwot/issues/81>), and also the
+nearest neighbor data if you set `ret_nn = TRUE`. If the names exist in more
+than one of the input data parameters listed above, but are inconsistent, no
+guarantees are made about which names will be used. Thank you 
+[jwijffels](https://github.com/jwijffels) for reporting this.
+* In `umap_transform`, the learning rate is now down-scaled by a factor of 4,
+consistent with the Python implementation of UMAP. If you need the old behavior
+back, use the (newly added) `learning_rate` parameter in `umap_transform` to set
+it explicitly. If you used the default value in `umap` when creating the model,
+the correct setting in `umap_transform` is `learning_rate = 1.0`.
+* Setting `nn_method = "annoy"` and `verbose = TRUE` would lead to an error with 
+datasets with fewer than 50 items in them.
+* Using multiple pre-computed nearest neighbors blocks is now supported with
+`umap_transform` (this was incorrectly documented to work).
+* Documentation around pre-calculated nearest neighbor data for `umap_transform`
+was wrong in other ways: it has now been corrected to indicate that there should
+be neighbor data for each item in the test data, but the neighbors and distances
+should refer to items in training data (i.e. the data used to build the model).
+* `n_neighbors` parameter is now correctly ignored in model generation if
+pre-calculated nearest neighbor data is provided.
+* Documentation incorrectly said `grain_size` didn't do anything.
+
 # uwot 0.1.10
 
 This release is mainly to allow for some internal changes to keep compatibility
