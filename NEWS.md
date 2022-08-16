@@ -1,3 +1,97 @@
+# uwot 0.1.13
+
+* This is a resubmission of 0.1.12 but with an internal function 
+(`fuzzy_simplicial_set`) refactored to behave more like that of previous 
+versions. This change was breaking the behavior of the CRAN package 
+[bbknnR](https://cran.r-project.org/package=bbknnR).
+
+# uwot 0.1.12
+
+## New features
+
+* New parameter: `dens_weight`. If set to a value between 0 and 1, an attempt
+is made to include the relative local densities of the input data in the output
+coordinates. This is an approximation to the 
+[densMAP](https://doi.org/10.1038/s41587-020-00801-7) method. A large value of
+`dens_weight` will use a larger range of output densities to reflect the input
+data. If the data is too spread out, reduce the value of `dens_weight`. For
+more information see the 
+[documentation at the uwot repo](https://jlmelville.github.io/uwot/leopold.html).
+* New parameter: `binary_edge_weights`. If set to `TRUE`, instead of smoothed
+knn distances, non-zero edge weights all have a value of 1. This is how
+[PaCMAP](https://www.jmlr.org/papers/v22/20-1061.html) works and there is
+[practical](https://arxiv.org/abs/2007.08902) and
+[theoretical](https://proceedings.neurips.cc/paper/2021/hash/2de5d16682c3c35007e4e92982f1a2ba-Abstract.html)
+reasons to believe this won't have a big effect on UMAP but you can try it
+yourself.
+* New options for `ret_extra`: 
+    * `"sigma"`: the return value will contain a `sigma` entry, a vector of the
+    smooth knn distance scaling normalization factors, one for each observation
+    in the input data. A small value indicates a high density of points in the
+    local neighborhood of that observation. For `lvish` the equivalent
+    bandwidths calculated for the input perplexity is returned.
+    * also, a vector `rho` will be exported, which is the distance to the
+    nearest neighbor after the number of neighbors specified by the
+    `local_connectivity`. Only applies for `umap` and `tumap`.
+    * `"localr"`: exports a vector of the local radii, the sum of `sigma` and
+    `rho` and used to scale the output coordinates when `dens_weight` is set.
+    Even if not using `dens_weight`, visualizing the output coordinates using a
+    color scale based on the value of `localr` can reveal regions of the input
+    data with different densities.
+* For functions `umap` and `tumap` only: new data type for precomputed nearest
+neighbor data passed as the `nn_method` parameter: you may use a sparse distance
+matrix of format `dgCMatrix` with dimensions `N x N` where `N` is the number of
+observations in the input data. Distances should be arranged by column, i.e. a
+non-zero entry in row `j` of the `i`th column indicates that the `j`th
+observation in the input data is a nearest neighbor of the `i`th observation
+with the distance given by the value of that element. Note that this is a
+different format to the sparse distance matrix that can be passed as input to
+`X`: notably, the matrix is not assumed to be symmetric. Unlike other input
+formats, you may have a different number of neighbors for each observation (but
+there must be at least one neighbor defined per observation).
+* `umap_transform` can also take a sparse distance matrix as its `nn_method`
+parameter if precomputed nearest neighbor data is used to generate an initial
+model. The format is the same as for the `nn_method` with `umap`. Because
+distances are arranged by columns, the expected dimensions of the sparse matrix
+is `N_model x N_new` where `N_model` is the number of observations in the
+original data and `N_new` is the number of observations in the data to be
+transformed.
+
+## Bug fixes and minor improvements
+
+* Models couldn't be re-saved after loading. Thank you to 
+[ilyakorsunsky](https://github.com/ilyakorsunsky) for reporting this 
+(<https://github.com/jlmelville/uwot/issues/88>).
+* [RSpectra](https://cran.r-project.org/package=RSpectra) is now a 'Suggests',
+rather than an 'Imports'. If you have RSpectra installed, it will be used
+automatically where previous versions required it (for spectral initialization).
+Otherwise, [irlba](https://cran.r-project.org/package=irlba) will be used.
+For two-dimensional output, you are unlikely to notice much difference in speed
+or accuracy with real-world data. For highly-structured simulation datasets
+(e.g. spectral initialization of a 1D line) then RSpectra will give much better,
+faster initializations, but these are not the typical use cases envisaged for
+this package. For embedding into higher dimensions (e.g. `n_components = 100` or
+higher), RSpectra is recommended and will likely out-perform irlba even if you
+have installed a good linear algebra library.
+* `init = "laplacian"` returned the wrong coordinates because of a slightly 
+subtle issue around how to order the eigenvectors when using the random walk
+transition matrix rather than normalized graph laplacians.
+* The `init_sdev` parameter was ignored when the `init` parameter was a
+user-supplied matrix. Now the input will be scaled.
+* Matrix input was being converted to and from a data frame during
+pre-processing, causing R to allocate memory that it was disinclined to ever
+give up even after the function exited. This unnecessary manipulation is now
+avoided.
+* The behavior of the `bandwidth` parameter has been changed to give results
+more like the current version (0.5.2) of the Python UMAP implementation. This is
+likely to be a breaking change for non-default settings of `bandwidth`, but this
+is not a parameter which is actually exposed by the Python UMAP public API any
+more, so is on the road to deprecation in uwot too and I don't recommend you
+change this.
+* Transforming data with multiple blocks would give an error if the number of
+rows of the new data did not equal the number of number of rows in the original
+data.
+
 # uwot 0.1.11
 
 ## New features

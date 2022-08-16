@@ -12,7 +12,7 @@ find_nn <- function(X, k, include_self = TRUE, method = "fnn",
   if (methods::is(X, "dist")) {
     res <- dist_nn(X, k, include_self = include_self)
   }
-  else if (methods::is(X, "sparseMatrix")) {
+  else if (is_sparse_matrix(X)) {
     # sparse distance matrix
     if (Matrix::isTriangular(X)) {
       res <- sparse_tri_nn(X, k, include_self = include_self)
@@ -42,9 +42,16 @@ find_nn <- function(X, k, include_self = TRUE, method = "fnn",
   res
 }
 
-# TRUE if you pass in an untagged list
+# an nn graph not in a list
+nn_is_single <- function(nn) {
+  (is.list(nn) && !is.null(nn$idx)) || is_sparse_matrix(nn)
+}
+
+# TRUE if nn is a sparse matrix or an untagged list. This covers passing in
+# a single nn graph, sparse distance matrix or list thereof, but excludes a
+# tagged annoy index or a string like "euclidean"
 nn_is_precomputed <- function(nn) {
-  is.list(nn) && is.null(nn$type)
+  (is.list(nn) && is.null(nn$type)) || is_sparse_matrix(nn)
 }
 
 # TRUE if we are using an annoy index

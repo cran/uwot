@@ -20,8 +20,6 @@ res2 <- umap(iris10,
 )
 expect_equal(res2, res)
 
-
-
 # Distance matrix input
 res <- umap(dist(iris10),
   n_neighbors = 4, n_epochs = 2, learning_rate = 0.5, min_dist = 0.001,
@@ -116,6 +114,32 @@ expect_equal(res_nnl$nn[[1]], res$nn[[1]])
 expect_equal(names(res_nnl$nn), "precomputed")
 expect_equal(res_nnxn, res_nnl$embedding)
 
+# Passing nn list directly and return a model
+set.seed(1337)
+res_nnl <- umap(iris10,
+                nn_method = res$nn, n_epochs = 2, learning_rate = 0.5, min_dist = 0.001,
+                init = "rand", verbose = FALSE, n_threads = 0,
+                ret_nn = TRUE, ret_model = TRUE
+)
+expect_ok_matrix(res_nnl$embedding)
+expect_equal(res_nnl$nn[[1]], res$nn[[1]])
+expect_equal(names(res_nnl$nn), "precomputed")
+expect_equal(res_nnxn, res_nnl$embedding)
+expect_equal(res_nnl$num_precomputed_nns, 1)
+
+# Passing nn list directly and return a model and set X to NULL
+set.seed(1337)
+res_nnl <- umap(X = NULL,
+                nn_method = res$nn, n_epochs = 2, learning_rate = 0.5, min_dist = 0.001,
+                init = "rand", verbose = FALSE, n_threads = 0,
+                ret_nn = TRUE, ret_model = TRUE
+)
+expect_ok_matrix(res_nnl$embedding)
+expect_equal(res_nnl$nn[[1]], res$nn[[1]])
+expect_equal(names(res_nnl$nn), "precomputed")
+expect_equal(res_nnxn, res_nnl$embedding)
+expect_equal(res_nnl$num_precomputed_nns, 1)
+
 # Use multiple nn data
 res_nn2 <- umap(iris10,
   nn_method = list(nn, nn), n_epochs = 2, learning_rate = 0.5,
@@ -129,9 +153,10 @@ expect_equal(names(res_nn2$nn), c("precomputed", "precomputed"))
 # lvish and force use of annoy
 res <- lvish(iris10,
   perplexity = 4, n_epochs = 2, learning_rate = 0.5, nn_method = "annoy",
-  init = "lvrand", verbose = FALSE, n_threads = 1
+  init = "lvrand", verbose = FALSE, n_threads = 1, ret_extra = c("sigma")
 )
-expect_ok_matrix(res)
+expect_ok_matrix(res$embedding)
+expect_equal(res$sigma, c(0.3039, 0.2063, 0.09489, 0.08811, 0.3091, 0.6789, 0.1743, 0.1686, 0.3445, 0.1671), tol = 1e-4)
 
 # lvish with knn
 res <- lvish(iris10,
@@ -158,6 +183,7 @@ expect_ok_matrix(res_test)
 expect_equal(dim(res_test0), c(10, 2))
 
 # return nn and a model
+set.seed(42)
 res <- tumap(iris10,
   n_neighbors = 4, n_epochs = 2, learning_rate = 0.5,
   init = "rand", verbose = FALSE, n_threads = 1,
@@ -172,6 +198,89 @@ expect_equal(names(res$nn), "euclidean")
 res_test <- umap_transform(iris10, res, n_threads = 0, verbose = FALSE)
 expect_ok_matrix(res_test)
 
+# test sparse nn matrix exactly the same as knn graph with explicit 0s for
+# self neighbors
+sparse_nbr_matrix0 <- Matrix::sparseMatrix(
+  i = c(
+    0, 4, 7, 9, 1, 2, 3, 9, 1, 2, 3, 6, 2, 3, 8, 9, 0, 4, 6, 7, 0, 4, 5, 7, 2, 3, 6, 7, 0, 4, 7, 9, 1, 2, 3, 8, 1, 2, 3, 9
+  ),
+  p = c(
+    0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40
+  ),
+  x = c(
+    0, 0.141421228647, 0.173204988241, 0.469041585922, 
+    0, 0.300000220537, 0.331662625074, 0.173205047846, 0.300000220537, 
+    0, 0.244949027896, 0.264575153589, 0.244949027896, 
+    0, 0.2999997437, 0.316227942705, 0.141421228647, 
+    0, 0.458257555962, 0.223606646061, 0.616441547871, 0.616441547871, 
+    0, 0.700000047684, 0.264575153589, 0.331662654877, 
+    0, 0.424264162779, 0.173204988241, 0.223606646061, 
+    0, 0.331662625074, 0.509901940823, 0.435889661312, 0.2999997437, 
+    0, 0.173205047846, 0.31622800231, 0.316227942705, 
+    0
+  ),
+  index1 = FALSE
+)
+set.seed(42)
+res_spnn0 <- tumap(iris10,
+             n_neighbors = 4, n_epochs = 2, learning_rate = 0.5,
+             init = "rand", verbose = FALSE, n_threads = 1,
+             nn_method = sparse_nbr_matrix0, ret_nn = TRUE
+)
+expect_is(res, "list")
+expect_ok_matrix(res_spnn0$embedding)
+# should get same results as with internal nn calculation
+expect_equal(res_spnn0$embedding, res$embedding)
+
+sparse_nbr_matrix0_with_names <- sparse_nbr_matrix0
+row.names(sparse_nbr_matrix0_with_names) <- row.names(iris10)
+colnames(sparse_nbr_matrix0_with_names) <- row.names(iris10)
+
+expect_equal(res_spnn0$nn$euclidean, sparse_nbr_matrix0_with_names)
+
+# sparse neighbor matrix without explicit zeros
+sparse_nbr_matrix <- Matrix::sparseMatrix(
+  i = c(
+    4, 7, 9, 2, 3, 9, 1, 3, 6, 2, 8, 9, 0, 6, 7, 0, 4, 7, 2, 3, 7, 0, 4, 9, 1, 2, 3, 1, 2, 3
+  ),
+  p = c(
+    0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30
+  ),
+  x = c(
+    0.141421228647, 0.173204988241, 0.469041585922, 
+    0.300000220537, 0.331662625074, 0.173205047846, 
+    0.300000220537, 0.244949027896, 0.264575153589, 
+    0.244949027896, 0.2999997437, 0.316227942705, 
+    0.141421228647, 0.458257555962, 0.223606646061, 
+    0.616441547871, 0.616441547871, 0.700000047684, 
+    0.264575153589, 0.331662654877, 0.424264162779, 
+    0.173204988241, 0.223606646061, 0.331662625074, 
+    0.509901940823, 0.435889661312, 0.2999997437, 
+    0.173205047846, 0.31622800231, 0.316227942705
+  ),
+  index1 = FALSE
+)
+
+set.seed(42)
+res_spnn <- tumap(iris10,
+                   n_neighbors = 4, n_epochs = 2, learning_rate = 0.5,
+                   init = "rand", verbose = FALSE, n_threads = 1,
+                   nn_method = sparse_nbr_matrix
+)
+expect_ok_matrix(res_spnn)
+# should get same results as with internal nn calculation
+expect_equal(res_spnn, res$embedding)
+
+# null X is ok with sparse nearest neighbors
+set.seed(42)
+res_spnn_nullX <- tumap(X = NULL,
+                  n_neighbors = 4, n_epochs = 2, learning_rate = 0.5,
+                  init = "rand", verbose = FALSE, n_threads = 1,
+                  nn_method = sparse_nbr_matrix0_with_names
+)
+expect_ok_matrix(res_spnn_nullX)
+# output picks up row names from input distance matrix
+expect_equal(res_spnn_nullX, res$embedding)
 
 # https://github.com/jlmelville/uwot/issues/6
 res <- umap(iris10,
@@ -180,6 +289,12 @@ res <- umap(iris10,
 )
 expect_ok_matrix(res, nc = 1)
 
+# enforce irlba for spectral initialization even if RSpectra is present
+res <- umap(iris10,
+            n_components = 1, n_neighbors = 4, n_epochs = 2,
+            n_threads = 1, verbose = FALSE, init = "irlba_spectral"
+)
+expect_ok_matrix(res, nc = 1)
 
 # Supervised
 set.seed(1337)
@@ -389,6 +504,18 @@ res <- umap(iris10,
 )
 expect_ok_matrix(res)
 
+# test that init_sdev actually applies to the input matrix
+# store old sd
+res_sd <- apply(res, 2, sd)
+res2 <- umap(iris10,
+            n_neighbors = 4, n_epochs = 0, learning_rate = 0.5,
+            init = res, verbose = FALSE, n_threads = 0,
+            init_sdev = 5
+)
+expect_ok_matrix(res2)
+expect_equal(apply(res2, 2, sd), rep(5, ncol(res2)))
+# make sure input is unchanged
+expect_equal(apply(res, 2, sd), res_sd)
 
 # umap transform when test datset size > train dataset size
 set.seed(1337)
@@ -556,3 +683,77 @@ oargs_umap <- tumap(iris10, n_neighbors = 4, n_epochs = 2, learning_rate = 0.5,
 expect_equal(length(oargs_umap$opt_args), 2)
 expect_equal(oargs_umap$opt_args$method, "sgd")
 expect_equal(oargs_umap$opt_args$alpha, 0.4)
+
+# Return sigma and rho
+res <- umap(iris10,
+            n_neighbors = 4, n_epochs = 2, learning_rate = 0.5, min_dist = 0.001,
+            init = "spca", verbose = FALSE, n_threads = 0,
+            ret_extra = c("sigma")
+)
+expect_is(res, "list")
+expect_ok_matrix(res$embedding)
+
+expected_sigma <- c(
+  0.1799, 0.2049, 0.04938, 0.0906, 0.2494, 0.003906, 0.1537, 0.1355, 0.2454, 0.2063
+)
+sigma <- res$sigma
+expect_equal(sigma, expected_sigma, tolerance = 1e-4)
+
+expected_rho <- c(
+  0.1414, 0.1732, 0.2449, 0.2449, 0.1414, 0.6164, 0.2646, 0.1732, 0.3, 0.1732
+)
+rho <- res$rho
+expect_equal(rho, expected_rho, 1e-4)
+
+res <- umap(iris10,
+            n_neighbors = 4, n_epochs = 2, learning_rate = 0.5, min_dist = 0.001,
+            init = "normlaplacian", verbose = FALSE, n_threads = 0, dens_scale = 1
+)
+expect_ok_matrix(res)
+res <- umap(iris10,
+            n_neighbors = 4, n_epochs = 2, learning_rate = 0.5, min_dist = 0.001,
+            init = "normlaplacian", verbose = FALSE, n_threads = 0, dens_scale = 1,
+            ret_extra = c("sigma", "localr")
+)
+expect_is(res, "list")
+expect_ok_matrix(res$embedding)
+sigma <- res$sigma
+expect_equal(sigma, expected_sigma, tolerance = 1e-4)
+rho <- res$rho
+expect_equal(rho, expected_rho, tolerance = 1e-4)
+
+expected_localr <- c(
+  0.3214, 0.3781, 0.2943, 0.3356, 0.3908, 0.6203, 0.4182, 0.3087, 0.5454, 0.3795
+)
+localr <- res$localr
+expect_equal(localr, expected_localr, tolerance = 1e-4)
+
+res <- umap(iris10,
+            n_neighbors = 4, n_epochs = 2, learning_rate = 0.5, min_dist = 0.001,
+            init = "normlaplacian", verbose = FALSE, n_threads = 0, dens_scale = 1,
+            ret_model = TRUE
+)
+expect_is(res, "list")
+expect_ok_matrix(res$embedding)
+expected_ai <- c(
+  8.072, 2.957, 13.89, 6.181, 2.41, 0.1389, 1.585, 10.34, 0.3076, 2.888
+)
+ai <- res$ai
+expect_equal(ai, expected_ai, tolerance = 1e-4)
+expect_equal(res$dens_scale, 1.0)
+expect_equal(res$method, "leopold")
+
+res <- umap(iris10,
+            n_neighbors = 4, n_epochs = 2, learning_rate = 0.5, min_dist = 0.001,
+            init = "normlaplacian", verbose = FALSE, n_threads = 0, dens_scale = 0.5,
+            ret_model = TRUE
+)
+expected_ai05 <- c(
+  3.348, 2.027, 4.392, 2.93, 1.83, 0.4392, 1.484, 3.79, 0.6536, 2.003
+)
+expect_equal(res$ai, expected_ai05, tolerance = 1e-3)
+expect_equal(res$dens_scale, 0.5)
+
+ret_trans <- umap_transform(iris10, res)
+expect_ok_matrix(res$embedding)
+

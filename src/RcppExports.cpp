@@ -43,19 +43,20 @@ BEGIN_RCPP
 END_RCPP
 }
 // calc_row_probabilities_parallel
-List calc_row_probabilities_parallel(NumericMatrix nn_dist, IntegerMatrix nn_idx, double perplexity, std::size_t n_iter, double tol, std::size_t n_threads, std::size_t grain_size);
-RcppExport SEXP _uwot_calc_row_probabilities_parallel(SEXP nn_distSEXP, SEXP nn_idxSEXP, SEXP perplexitySEXP, SEXP n_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP grain_sizeSEXP) {
+List calc_row_probabilities_parallel(NumericVector nn_dist, std::size_t n_vertices, double perplexity, std::size_t n_iter, double tol, bool ret_sigma, std::size_t n_threads, std::size_t grain_size);
+RcppExport SEXP _uwot_calc_row_probabilities_parallel(SEXP nn_distSEXP, SEXP n_verticesSEXP, SEXP perplexitySEXP, SEXP n_iterSEXP, SEXP tolSEXP, SEXP ret_sigmaSEXP, SEXP n_threadsSEXP, SEXP grain_sizeSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< NumericMatrix >::type nn_dist(nn_distSEXP);
-    Rcpp::traits::input_parameter< IntegerMatrix >::type nn_idx(nn_idxSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type nn_dist(nn_distSEXP);
+    Rcpp::traits::input_parameter< std::size_t >::type n_vertices(n_verticesSEXP);
     Rcpp::traits::input_parameter< double >::type perplexity(perplexitySEXP);
     Rcpp::traits::input_parameter< std::size_t >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< bool >::type ret_sigma(ret_sigmaSEXP);
     Rcpp::traits::input_parameter< std::size_t >::type n_threads(n_threadsSEXP);
     Rcpp::traits::input_parameter< std::size_t >::type grain_size(grain_sizeSEXP);
-    rcpp_result_gen = Rcpp::wrap(calc_row_probabilities_parallel(nn_dist, nn_idx, perplexity, n_iter, tol, n_threads, grain_size));
+    rcpp_result_gen = Rcpp::wrap(calc_row_probabilities_parallel(nn_dist, n_vertices, perplexity, n_iter, tol, ret_sigma, n_threads, grain_size));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -91,20 +92,23 @@ BEGIN_RCPP
 END_RCPP
 }
 // smooth_knn_distances_parallel
-List smooth_knn_distances_parallel(NumericMatrix nn_dist, std::size_t n_iter, double local_connectivity, double bandwidth, double tol, double min_k_dist_scale, std::size_t n_threads, std::size_t grain_size);
-RcppExport SEXP _uwot_smooth_knn_distances_parallel(SEXP nn_distSEXP, SEXP n_iterSEXP, SEXP local_connectivitySEXP, SEXP bandwidthSEXP, SEXP tolSEXP, SEXP min_k_dist_scaleSEXP, SEXP n_threadsSEXP, SEXP grain_sizeSEXP) {
+List smooth_knn_distances_parallel(NumericVector nn_dist, IntegerVector nn_ptr, bool skip_first, NumericVector target, std::size_t n_iter, double local_connectivity, double tol, double min_k_dist_scale, bool ret_sigma, std::size_t n_threads, std::size_t grain_size);
+RcppExport SEXP _uwot_smooth_knn_distances_parallel(SEXP nn_distSEXP, SEXP nn_ptrSEXP, SEXP skip_firstSEXP, SEXP targetSEXP, SEXP n_iterSEXP, SEXP local_connectivitySEXP, SEXP tolSEXP, SEXP min_k_dist_scaleSEXP, SEXP ret_sigmaSEXP, SEXP n_threadsSEXP, SEXP grain_sizeSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< NumericMatrix >::type nn_dist(nn_distSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type nn_dist(nn_distSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type nn_ptr(nn_ptrSEXP);
+    Rcpp::traits::input_parameter< bool >::type skip_first(skip_firstSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type target(targetSEXP);
     Rcpp::traits::input_parameter< std::size_t >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< double >::type local_connectivity(local_connectivitySEXP);
-    Rcpp::traits::input_parameter< double >::type bandwidth(bandwidthSEXP);
     Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< double >::type min_k_dist_scale(min_k_dist_scaleSEXP);
+    Rcpp::traits::input_parameter< bool >::type ret_sigma(ret_sigmaSEXP);
     Rcpp::traits::input_parameter< std::size_t >::type n_threads(n_threadsSEXP);
     Rcpp::traits::input_parameter< std::size_t >::type grain_size(grain_sizeSEXP);
-    rcpp_result_gen = Rcpp::wrap(smooth_knn_distances_parallel(nn_dist, n_iter, local_connectivity, bandwidth, tol, min_k_dist_scale, n_threads, grain_size));
+    rcpp_result_gen = Rcpp::wrap(smooth_knn_distances_parallel(nn_dist, nn_ptr, skip_first, target, n_iter, local_connectivity, tol, min_k_dist_scale, ret_sigma, n_threads, grain_size));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -154,32 +158,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// init_transform_av_parallel
-NumericMatrix init_transform_av_parallel(NumericMatrix train_embedding, IntegerMatrix nn_index, std::size_t n_threads, std::size_t grain_size);
-RcppExport SEXP _uwot_init_transform_av_parallel(SEXP train_embeddingSEXP, SEXP nn_indexSEXP, SEXP n_threadsSEXP, SEXP grain_sizeSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< NumericMatrix >::type train_embedding(train_embeddingSEXP);
-    Rcpp::traits::input_parameter< IntegerMatrix >::type nn_index(nn_indexSEXP);
-    Rcpp::traits::input_parameter< std::size_t >::type n_threads(n_threadsSEXP);
-    Rcpp::traits::input_parameter< std::size_t >::type grain_size(grain_sizeSEXP);
-    rcpp_result_gen = Rcpp::wrap(init_transform_av_parallel(train_embedding, nn_index, n_threads, grain_size));
-    return rcpp_result_gen;
-END_RCPP
-}
 // init_transform_parallel
-NumericMatrix init_transform_parallel(NumericMatrix train_embedding, IntegerMatrix nn_index, NumericMatrix nn_weights, std::size_t n_threads, std::size_t grain_size);
-RcppExport SEXP _uwot_init_transform_parallel(SEXP train_embeddingSEXP, SEXP nn_indexSEXP, SEXP nn_weightsSEXP, SEXP n_threadsSEXP, SEXP grain_sizeSEXP) {
+NumericMatrix init_transform_parallel(NumericMatrix train_embedding, IntegerVector nn_index, std::size_t n_test_vertices, Nullable<NumericVector> nn_weights, std::size_t n_threads, std::size_t grain_size);
+RcppExport SEXP _uwot_init_transform_parallel(SEXP train_embeddingSEXP, SEXP nn_indexSEXP, SEXP n_test_verticesSEXP, SEXP nn_weightsSEXP, SEXP n_threadsSEXP, SEXP grain_sizeSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< NumericMatrix >::type train_embedding(train_embeddingSEXP);
-    Rcpp::traits::input_parameter< IntegerMatrix >::type nn_index(nn_indexSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type nn_weights(nn_weightsSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type nn_index(nn_indexSEXP);
+    Rcpp::traits::input_parameter< std::size_t >::type n_test_vertices(n_test_verticesSEXP);
+    Rcpp::traits::input_parameter< Nullable<NumericVector> >::type nn_weights(nn_weightsSEXP);
     Rcpp::traits::input_parameter< std::size_t >::type n_threads(n_threadsSEXP);
     Rcpp::traits::input_parameter< std::size_t >::type grain_size(grain_sizeSEXP);
-    rcpp_result_gen = Rcpp::wrap(init_transform_parallel(train_embedding, nn_index, nn_weights, n_threads, grain_size));
+    rcpp_result_gen = Rcpp::wrap(init_transform_parallel(train_embedding, nn_index, n_test_vertices, nn_weights, n_threads, grain_size));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -187,14 +178,13 @@ END_RCPP
 static const R_CallMethodDef CallEntries[] = {
     {"_uwot_connected_components_undirected", (DL_FUNC) &_uwot_connected_components_undirected, 5},
     {"_uwot_annoy_search_parallel_cpp", (DL_FUNC) &_uwot_annoy_search_parallel_cpp, 7},
-    {"_uwot_calc_row_probabilities_parallel", (DL_FUNC) &_uwot_calc_row_probabilities_parallel, 7},
+    {"_uwot_calc_row_probabilities_parallel", (DL_FUNC) &_uwot_calc_row_probabilities_parallel, 8},
     {"_uwot_optimize_layout_r", (DL_FUNC) &_uwot_optimize_layout_r, 21},
-    {"_uwot_smooth_knn_distances_parallel", (DL_FUNC) &_uwot_smooth_knn_distances_parallel, 8},
+    {"_uwot_smooth_knn_distances_parallel", (DL_FUNC) &_uwot_smooth_knn_distances_parallel, 11},
     {"_uwot_fast_intersection_cpp", (DL_FUNC) &_uwot_fast_intersection_cpp, 6},
     {"_uwot_general_sset_intersection_cpp", (DL_FUNC) &_uwot_general_sset_intersection_cpp, 10},
     {"_uwot_hardware_concurrency", (DL_FUNC) &_uwot_hardware_concurrency, 0},
-    {"_uwot_init_transform_av_parallel", (DL_FUNC) &_uwot_init_transform_av_parallel, 4},
-    {"_uwot_init_transform_parallel", (DL_FUNC) &_uwot_init_transform_parallel, 5},
+    {"_uwot_init_transform_parallel", (DL_FUNC) &_uwot_init_transform_parallel, 6},
     {NULL, NULL, 0}
 };
 

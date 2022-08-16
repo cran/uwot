@@ -253,6 +253,39 @@ void create_tumap(UmapFactory &umap_factory, List) {
   umap_factory.create(gradient);
 }
 
+void create_umapai(UmapFactory &umap_factory, List method_args) {
+  std::vector<std::string> arg_names = {"ai", "b", "ndim"};
+  validate_args(method_args, arg_names);
+
+  std::vector<float> ai = method_args["ai"];
+  float b = method_args["b"];
+  std::size_t ndim = method_args["ndim"];
+  const uwot::umapai_gradient gradient(ai, b, ndim);
+  umap_factory.create(gradient);
+}
+
+void create_umapai2(UmapFactory &umap_factory, List method_args) {
+  std::vector<std::string> arg_names = {"ai", "aj", "b", "ndim"};
+  validate_args(method_args, arg_names);
+
+  std::vector<float> ai = method_args["ai"];
+  std::vector<float> aj = method_args["ai"];
+  float b = method_args["b"];
+  std::size_t ndim = method_args["ndim"];
+  const uwot::umapai2_gradient gradient(ai, aj, b, ndim);
+  umap_factory.create(gradient);
+}
+
+void create_pacmap(UmapFactory &umap_factory, List method_args) {
+  std::vector<std::string> arg_names = {"a", "b"};
+  validate_args(method_args, arg_names);
+
+  float a = method_args["a"];
+  float b = method_args["b"];
+  const uwot::pacmap_gradient gradient(a, b);
+  umap_factory.create(gradient);
+}
+
 void create_largevis(UmapFactory &umap_factory, List method_args) {
   std::vector<std::string> arg_names = {"gamma"};
   validate_args(method_args, arg_names);
@@ -330,13 +363,21 @@ NumericMatrix optimize_layout_r(
                            n_head_vertices, n_tail_vertices, epochs_per_sample,
                            initial_alpha, opt_args, negative_sample_rate, batch,
                            n_threads, grain_size, uwot_ecb, verbose);
-
+  if (verbose) {
+    Rcerr << "Using method '" << method << "'" << std::endl;
+  }
   if (method == "umap") {
     create_umap(umap_factory, method_args);
   } else if (method == "tumap") {
     create_tumap(umap_factory, method_args);
   } else if (method == "largevis") {
     create_largevis(umap_factory, method_args);
+  } else if (method == "pacmap") {
+    create_pacmap(umap_factory, method_args);
+  } else if (method == "leopold") {
+    create_umapai(umap_factory, method_args);
+  } else if (method == "leopold2") {
+    create_umapai2(umap_factory, method_args);
   } else {
     stop("Unknown method: '" + method + "'");
   }

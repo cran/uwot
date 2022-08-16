@@ -26,36 +26,6 @@
 
 using namespace Rcpp;
 
-// [[Rcpp::export]]
-NumericMatrix init_transform_av_parallel(NumericMatrix train_embedding,
-                                         IntegerMatrix nn_index,
-                                         std::size_t n_threads = 0,
-                                         std::size_t grain_size = 1) {
-
-  std::size_t n_train_vertices = train_embedding.nrow();
-  std::size_t ndim = train_embedding.ncol();
-  std::size_t n_test_vertices = nn_index.nrow();
-
-  auto train_embeddingv = as<std::vector<float>>(train_embedding);
-  auto nn_indexv = as<std::vector<int>>(nn_index);
-  // Convert to zero-indexing
-  for (int &i : nn_indexv) {
-    --i;
-  }
-
-  uwot::AverageWorker worker(train_embeddingv, n_train_vertices, nn_indexv,
-                             n_test_vertices);
-
-  if (n_threads > 0) {
-    RcppPerpendicular::parallel_for(0, n_test_vertices, worker, n_threads,
-                                    grain_size);
-  } else {
-    worker(0, n_test_vertices);
-  }
-
-  return NumericMatrix(n_test_vertices, ndim, worker.embedding.begin());
-}
-
 // Initialize embedding as a weighted average of nearest neighbors of each point
 // train_embedding: n_train x dim matrix of final embedding coordinates
 // nn_index: n_test x n_nbrs matrix of indexes of neighbors in X_train that are
@@ -64,14 +34,15 @@ NumericMatrix init_transform_av_parallel(NumericMatrix train_embedding,
 // Returns the n_test x dim matrix of initialized coordinates.
 // [[Rcpp::export]]
 NumericMatrix init_transform_parallel(NumericMatrix train_embedding,
-                                      IntegerMatrix nn_index,
-                                      NumericMatrix nn_weights,
+                                      IntegerVector nn_index,
+                                      std::size_t n_test_vertices,
+                                      Nullable<NumericVector> nn_weights,
                                       std::size_t n_threads = 0,
                                       std::size_t grain_size = 1) {
 
-  std::size_t n_train_vertices = train_embedding.nrow();
-  std::size_t ndim = train_embedding.ncol();
-  std::size_t n_test_vertices = nn_index.nrow();
+  std::size_t n_train_vertices = train_embedding.ncol();
+  std::size_t ndim = train_embedding.nrow();
+  std::size_t n_neighbors = nn_index.size() / n_test_vertices;
 
   auto train_embeddingv = as<std::vector<float>>(train_embedding);
   auto nn_indexv = as<std::vector<int>>(nn_index);
@@ -79,17 +50,19 @@ NumericMatrix init_transform_parallel(NumericMatrix train_embedding,
   for (int &i : nn_indexv) {
     --i;
   }
-  auto nn_weightsv = as<std::vector<float>>(nn_weights);
+  std::vector<float> embedding(n_test_vertices * n_neighbors);
 
-  uwot::WeightedAverageWorker worker(train_embeddingv, n_train_vertices,
-                                     nn_indexv, nn_weightsv, n_test_vertices);
-
-  if (n_threads > 0) {
-    RcppPerpendicular::parallel_for(0, n_test_vertices, worker, n_threads,
-                                    grain_size);
-  } else {
-    worker(0, n_test_vertices);
+  std::vector<float> nn_weightsv(0);
+  if (nn_weights.isNotNull()) {
+    nn_weightsv = as<std::vector<float>>(nn_weights);
   }
+  auto worker = [&](std::size_t begin, std::size_t end) {
+    uwot::init_by_mean(begin, end, ndim, n_neighbors, nn_indexv, nn_weightsv,
+                       n_test_vertices, train_embeddingv, n_train_vertices,
+                       embedding);
+  };
+  RcppPerpendicular::parallel_for(n_test_vertices, worker, n_threads,
+                                  grain_size);
 
-  return NumericMatrix(n_test_vertices, ndim, worker.embedding.begin());
+  return NumericMatrix(ndim, n_test_vertices, embedding.begin());
 }

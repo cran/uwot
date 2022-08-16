@@ -15,24 +15,30 @@
 #'   have the same columns in the same order as the input data used to generate
 #'   the \code{model}.
 #' @param model Data associated with an existing embedding.
-#' @param nn_method Optional pre-calculated nearest neighbor data. 
-#' 
-#' The format is 
-#'   a list consisting of two elements:
+#' @param nn_method Optional pre-calculated nearest neighbor data. There are
+#'   two supported formats. The first is a list consisting of two elements:
 #'   \itemize{
 #'     \item \code{"idx"}. A \code{n_vertices x n_neighbors} matrix where 
-#'     \code{n_vertices} is the number of items to be transformed. The contents 
+#'     \code{n_vertices} is the number of observations in \code{X}. The contents 
 #'     of the matrix should be the integer indexes of the data used to generate
 #'     the \code{model}, which are the \code{n_neighbors}-nearest neighbors of
 #'     the data to be transformed.
 #'     \item \code{"dist"}. A \code{n_vertices x n_neighbors} matrix
 #'     containing the distances of the nearest neighbors.
 #'   }
+#'   The second supported format is a sparse distance matrix of type
+#'   \code{dgCMatrix}, with dimensions \code{n_model_vertices x n_vertices}.
+#'   where \code{n_model_vertices} is the number of observations in the original
+#'   data that generated the model. Distances should be arranged by column, i.e.
+#'   a non-zero entry in row \code{j} of the \code{i}th column indicates that
+#'   the \code{j}th observation in the original data used to generate the
+#'   \code{model} is a nearest neighbor of the \code{i}th observation in the new
+#'   data, with the distance given by the value of that element. In this format,
+#'   a different number of neighbors is allowed for each observation, i.e. 
+#'   each column can contain a different number of non-zero values.
 #'   Multiple nearest neighbor data (e.g. from two different pre-calculated
 #'   metrics) can be passed by passing a list containing the nearest neighbor
 #'   data lists as items.
-#'   The \code{X} parameter is ignored when using pre-calculated nearest 
-#'   neighbor data.
 #' @param init_weighted If \code{TRUE}, then initialize the embedded coordinates
 #'   of \code{X} using a weighted average of the coordinates of the nearest
 #'   neighbors from the original embedding in \code{model}, where the weights
@@ -178,6 +184,7 @@ umap_transform <- function(X = NULL, model = NULL,
   else {
     if (!is.null(X)) {
       tsmessage('argument "nn_method" is provided, ignoring argument "X"')
+      X <- NULL
     }
   }
   
@@ -203,12 +210,25 @@ umap_transform <- function(X = NULL, model = NULL,
   nn_index <- model$nn_index
   n_neighbors <- model$n_neighbors
   local_connectivity <- model$local_connectivity
+  
   train_embedding <- model$embedding
+  n_train_vertices <- nrow(train_embedding)
+  ndim <- ncol(train_embedding)
+  row.names(train_embedding) <- NULL
+  # uwot model format should be changed so train embedding is stored transposed
+  train_embedding <- t(train_embedding)
+
   method <- model$method
   scale_info <- model$scale_info
   metric <- model$metric
   nblocks <- length(metric)
   pca_models <- model$pca_models
+  
+  if (method == "leopold") {
+    dens_scale <- model$dens_scale
+    ai <- model$ai
+    rad_coeff <- model$rad_coeff
+  }
   
   if (is.null(batch)) {
     if (!is.null(model$batch)) {
@@ -248,12 +268,16 @@ umap_transform <- function(X = NULL, model = NULL,
     tsmessage("Using PCG for random number generation")
     pcg_rand <- TRUE
   }
-
+  num_precomputed_nns <- model$num_precomputed_nns
+  
   # the number of model vertices
   n_vertices <- NULL
   Xnames <- NULL
-  if (!is.null(X)){
-    if (ncol(X) != norig_col) {
+  if (!is.null(X)) {
+    if (!(methods::is(X, "data.frame") || methods::is(X, "matrix"))) {
+      stop("Unknown input data format")
+    }
+    if (!is.null(norig_col) && ncol(X) != norig_col) {
       stop("Incorrect dimensions: X must have ", norig_col, " columns")
     }
     if (methods::is(X, "data.frame")) {
@@ -264,37 +288,53 @@ umap_transform <- function(X = NULL, model = NULL,
       X <- as.matrix(X[, indexes])
     }
     n_vertices <- nrow(X)
+    if (n_vertices < 1) {
+      stop("Not enough rows in X")
+    }
     if (!is.null(row.names(X))) {
       Xnames <- row.names(X)
     }
     checkna(X)
   } else if (nn_is_precomputed(nn_method)) {
-    if (nblocks == 1) {
-      if (length(nn_method) == 1) {
-        graph <- nn_method[[1]]
-      }
-      else {
-        graph <- nn_method
-      }
-      n_vertices <- nrow(graph$idx)
-      check_graph(graph, n_vertices, n_neighbors)
-      if (is.null(Xnames)) {
-        Xnames <- nn_graph_row_names(graph)
-      }
+    # store single nn graph as a one-item list
+    if (num_precomputed_nns == 1 && nn_is_single(nn_method)) {
+      nn_method <- list(nn_method)
     }
-    else {
-      stopifnot(length(nn_method) == nblocks)
-      for (i in 1:nblocks) {
-        graph <- nn_method[[i]]
+    if (length(nn_method) != num_precomputed_nns) {
+      stop("Expecting ", pluralize("pre-computed neighbor data block", num_precomputed_nns))
+    }
+    if (length(n_neighbors) != num_precomputed_nns) {
+      stop("Expecting ", 
+           pluralize("n_neighbor values (one per neighbor block)", num_precomputed_nns))
+    }
+    for (i in 1:num_precomputed_nns) {
+      graph <- nn_method[[i]]
+      
+      if (is.list(graph)) {
+        check_graph(graph, expected_rows = n_vertices, 
+                    expected_cols = n_neighbors[[i]], bipartite = TRUE)
         if (is.null(n_vertices)) {
           n_vertices <- nrow(graph$idx)
         }
-        check_graph(graph, n_vertices, n_neighbors)
         if (is.null(Xnames)) {
           Xnames <- nn_graph_row_names(graph)
         }
       }
+      else if (is_sparse_matrix(graph)) {
+        # nn graph should have dims n_train_obs x n_test_obs
+        graph <- Matrix::drop0(graph)
+        if (is.null(n_vertices)) {
+          n_vertices <- ncol(graph)
+        }
+        if (is.null(Xnames)) {
+          Xnames <- colnames(graph)
+        }
+      }
+      else {
+        stop("Error: unknown neighbor graph format")
+      }
     }
+    nblocks <- num_precomputed_nns
   }
   
   if (!is.null(init)) {
@@ -314,8 +354,8 @@ umap_transform <- function(X = NULL, model = NULL,
       }
     }
     else if (is.matrix(init)) {
-      indim <- c(nrow(init), ncol(init))
-      xdim <- c(n_vertices, ncol(train_embedding))
+      indim <- dim(init)
+      xdim <- c(n_vertices, ndim)
       if (!all(indim == xdim)) {
         stop("Initial embedding matrix has wrong dimensions, expected (",
              xdim[1], ", ", xdim[2], "), but was (",
@@ -330,6 +370,10 @@ umap_transform <- function(X = NULL, model = NULL,
       stop("Invalid input format for 'init'")
     }
   }
+  if (is.null(n_vertices)) {
+    stop("Failed to read input correctly: invalid input format")
+  }
+  
   if (verbose) {
     x_is_matrix <- methods::is(X, "matrix")
     tsmessage("Read ", n_vertices, " rows", appendLF = !x_is_matrix)
@@ -346,28 +390,30 @@ umap_transform <- function(X = NULL, model = NULL,
 
   graph <- NULL
   embedding <- NULL
+  localr <- NULL
+  need_sigma <- method == "leopold" && nblocks == 1
   for (i in 1:nblocks) {
     tsmessage("Processing block ", i, " of ", nblocks)
-    if (nblocks == 1) {
-      ann <- nn_index
-      Xsub <- X
-    }
-    else {
-      ann <- nn_index[[i]]
-      subset <- metric[[i]]
-      if (is.list(subset)) {
-        subset <- lsplit_unnamed(subset)$unnamed[[1]]
-      }
-      Xsub <- X[, subset, drop = FALSE]
-    }
-
-    if (!is.null(pca_models) && !is.null(pca_models[[as.character(i)]])) {
-      Xsub <- apply_pca(
-        X = Xsub, pca_res = pca_models[[as.character(i)]],
-        verbose = verbose
-      )
-    }
     if (!is.null(X)) {
+      if (nblocks == 1) {
+        Xsub <- X
+        ann <- nn_index
+      }
+      else {
+        subset <- metric[[i]]
+        if (is.list(subset)) {
+          subset <- lsplit_unnamed(subset)$unnamed[[1]]
+        }
+        Xsub <- X[, subset, drop = FALSE]
+        ann <- nn_index[[i]]
+      }
+      
+      if (!is.null(pca_models) && !is.null(pca_models[[as.character(i)]])) {
+        Xsub <- apply_pca(
+          X = Xsub, pca_res = pca_models[[as.character(i)]],
+          verbose = verbose
+        )
+      }
       nn <- annoy_search(Xsub,
                          k = n_neighbors, ann = ann, search_k = search_k,
                          prep_data = TRUE,
@@ -375,29 +421,97 @@ umap_transform <- function(X = NULL, model = NULL,
                          n_threads = n_threads, grain_size = grain_size,
                          verbose = verbose
       )
-    } else if (nn_is_precomputed(nn_method)) {
-      if (nblocks == 1 && !is.null(nn_method$idx)) {
-        # When there's only one block, the NN graph can be passed directly
-        nn <- nn_method
+    } else if (is.list(nn_method)) {
+      # otherwise we expect a list of NN graphs
+      nn <- nn_method[[i]]
+    }
+    else {
+      stop("Can't transform new data if X is NULL ", 
+           "and no sparse distance matrix available")
+    }
+    
+    osparse <- NULL
+    if (is_sparse_matrix(nn)) {
+      nn <- Matrix::drop0(nn)
+      osparse <- order_sparse(nn)
+      nn_idxv <- osparse$i + 1
+      nn_distv <- osparse$x
+      nn_ptr <- osparse$p
+      n_nbrs <- diff(nn_ptr)
+      if (any(n_nbrs < 1)) {
+        stop("All observations need at least one neighbor")
+      }
+      target <- log2(n_nbrs)
+      skip_first <- TRUE
+    }
+    else {
+      nnt <- nn_graph_t(nn)
+      if (length(n_neighbors) == nblocks) {
+        # if model came from multiple different external neighbor data
+        n_nbrs <- n_neighbors[[i]]
       }
       else {
-        # otherwise we expect a list of NN graphs
-        nn <- nn_method[[i]]
+        # multiple internal blocks 
+        n_nbrs <- n_neighbors
       }
+      if (is.na(n_nbrs) || n_nbrs != nrow(nnt$idx)) {
+        # original neighbor data was sparse, but we are using dense knn format
+        # or n_neighbors doesn't match
+        n_nbrs <- nrow(nnt$idx)
+        tsmessage("Possible mismatch with original vs new neighbor data ", 
+                  "format, using ", n_nbrs, " nearest neighbors")
+      }
+      target <- log2(n_nbrs)
+      nn_ptr <- n_nbrs
+      nn_distv <- as.vector(nnt$dist)
+      nn_idxv <- as.vector(nnt$idx)
+      skip_first <- TRUE
     }
-    graph_block <- smooth_knn(nn,
+
+    sknn_res <- smooth_knn(
+      nn_dist = nn_distv,
+      nn_ptr = nn_ptr,
+      skip_first = skip_first,
+      target = target,
       local_connectivity = adjusted_local_connectivity,
       n_threads = n_threads,
       grain_size = grain_size,
-      verbose = verbose
+      verbose = verbose,
+      ret_sigma = TRUE
     )
+    if (is.null(localr) && need_sigma) {
+      # because of the adjusted local connectivity rho is too small compared
+      # to that used to generate the "training" data but sigma is larger, so
+      # let's just stick with sigma + rho even though it tends to be an 
+      # underestimate 
+      localr <- sknn_res$sigma + sknn_res$rho
+    }
+    
+    graph_blockv <- sknn_res$matrix
+    if (is_sparse_matrix(nn)) {
+      graph_block <- Matrix::sparseMatrix(j = osparse$i, p = osparse$p, x = graph_blockv,
+                                dims = rev(osparse$dims), index1 = FALSE)
+    }
+    else {
+      graph_block <- nn_to_sparse(nn_idxv, n_vertices, graph_blockv,
+        self_nbr = FALSE,
+        max_nbr_id = n_train_vertices,
+        by_row = FALSE
+      )
+    }
 
     if (is.logical(init_weighted)) {
-      embedding_block <- init_new_embedding(train_embedding, nn, graph_block,
-        weighted = init_weighted,
-        n_threads = n_threads,
-        grain_size = grain_size, verbose = verbose
-      )
+      embedding_block <-
+        init_new_embedding(
+          train_embedding = train_embedding,
+          nn_idx = nn_idxv,
+          n_test_vertices = n_vertices,
+          graph = graph_blockv,
+          weighted = init_weighted,
+          n_threads = n_threads,
+          grain_size = grain_size,
+          verbose = verbose
+        )
       if (is.null(embedding)) {
         embedding <- embedding_block
       }
@@ -405,16 +519,12 @@ umap_transform <- function(X = NULL, model = NULL,
         embedding <- embedding + embedding_block
       }
     }
-
-    graph_block <- nn_to_sparse(nn$idx, as.vector(graph_block),
-      self_nbr = FALSE,
-      max_nbr_id = nrow(train_embedding)
-    )
+    
     if (is.null(graph)) {
       graph <- graph_block
     }
     else {
-      graph <- set_intersect(graph, graph_block, weight = 0.5, reset = TRUE)
+      graph <- set_intersect(graph, graph_block, weight = 0.5, reset = FALSE)
     }
   }
 
@@ -425,7 +535,7 @@ umap_transform <- function(X = NULL, model = NULL,
   }
   else {
     tsmessage("Initializing from user-supplied matrix")
-    embedding <- init
+    embedding <- t(init)
   }
 
   if (n_epochs > 0) {
@@ -456,8 +566,8 @@ umap_transform <- function(X = NULL, model = NULL,
       positive_tail <- Matrix::which(graph != 0, arr.ind = TRUE)[, 2] - 1
     }
     
-    n_head_vertices <- nrow(embedding)
-    n_tail_vertices <- nrow(train_embedding)
+    n_head_vertices <- ncol(embedding)
+    n_tail_vertices <- n_train_vertices
     
     # if batch = TRUE points into the head (length == n_tail_vertices)
     # if batch = FALSE, points into the tail (length == n_head_vertices)
@@ -472,18 +582,25 @@ umap_transform <- function(X = NULL, model = NULL,
     )
 
     method <- tolower(method)
-    if (method == "umap") {
-      method_args <- list(a = a, b = b, gamma = gamma, approx_pow = approx_pow)
+    if (method == "leopold") {
+      # Use the linear model 2 log ai = -m log(localr) + c
+      aj <- exp(0.5 * ((-log(localr) * rad_coeff[2]) + rad_coeff[1]))
+      # Prevent too-small/large aj
+      min_aj <- min(sqrt(a * 10 ^ (-2 * dens_scale)), 0.1)
+      aj[aj < min_aj] <- min_aj
+      max_aj <- sqrt(a * 10 ^ (2 * dens_scale))
+      aj[aj > max_aj] <- max_aj
+      method <- "leopold2"
     }
-    else {
-      method_args <- list()
-    }
-    
+
+    method_args <- switch(method, 
+      umap = list(a = a, b = b, gamma = gamma, approx_pow = approx_pow),
+      leopold2 = list(ai = ai, aj = aj, b = b, ndim = ndim),
+      list()
+    )
+
     full_opt_args <- get_opt_args(opt_args, alpha)
     
-    embedding <- t(embedding)
-    row.names(train_embedding) <- NULL
-    train_embedding <- t(train_embedding)
     embedding <- optimize_layout_r(
       head_embedding = embedding,
       tail_embedding = train_embedding,
@@ -507,8 +624,8 @@ umap_transform <- function(X = NULL, model = NULL,
       verbose = verbose,
       epoch_callback = epoch_callback
     )
-    embedding <- t(embedding)
   }
+  embedding <- t(embedding)
   tsmessage("Finished")
   if (!is.null(Xnames)) {
     row.names(embedding) <- Xnames
@@ -516,36 +633,38 @@ umap_transform <- function(X = NULL, model = NULL,
   embedding
 }
 
-init_new_embedding <- function(train_embedding, nn, graph, weighted = TRUE,
-                               n_threads = NULL,
-                               grain_size = 1, verbose = FALSE) {
-  if (is.null(n_threads)) {
-    n_threads <- default_num_threads()
-  }
-  if (weighted) {
+init_new_embedding <-
+  function(train_embedding,
+           nn_idx,
+           n_test_vertices,
+           graph,
+           weighted = TRUE,
+           n_threads = NULL,
+           grain_size = 1,
+           verbose = FALSE) {
+    if (is.null(n_threads)) {
+      n_threads <- default_num_threads()
+    }
+    avtype <- ifelse(weighted, "weighted ", "")
     tsmessage(
-      "Initializing by weighted average of neighbor coordinates",
+      "Initializing by ",
+      avtype,
+      "average of neighbor coordinates",
       pluralize("thread", n_threads, " using")
     )
-    embedding <- init_transform_parallel(train_embedding, nn$idx, graph,
+    nn_weights <- NULL
+    if (weighted) {
+      nn_weights <- graph
+    }
+    init_transform_parallel(
+      train_embedding = train_embedding,
+      nn_index = nn_idx,
+      n_test_vertices = n_test_vertices,
+      nn_weights = nn_weights,
       n_threads = n_threads,
       grain_size = grain_size
     )
   }
-  else {
-    tsmessage(
-      "Initializing by average of neighbor coordinates",
-      pluralize("thread", n_threads, " using")
-    )
-    embedding <- init_transform_av_parallel(train_embedding, nn$idx,
-                                            n_threads = n_threads,
-                                            grain_size = grain_size
-    )
-  }
-
-  embedding
-}
-
 
 # Pure R implementation of (weighted) average. Superceded by C++ implementations
 init_transform <- function(train_embedding, nn_index, weights = NULL) {

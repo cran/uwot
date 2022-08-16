@@ -16,20 +16,28 @@
 # A must be symmetric and positive semi definite, but not necessarily
 # normalized in any specific way.
 #' @import Matrix
-laplacian_eigenmap <- function(A, ndim = 2, verbose = FALSE) {
+laplacian_eigenmap <- function(A, ndim = 2, verbose = FALSE, force_irlba = FALSE) {
+  if (rspectra_is_installed() && !force_irlba) {
+    coords <- rspectra_laplacian_eigenmap(A, ndim, verbose = verbose)
+  }
+  else {
+    coords <- irlba_laplacian_eigenmap(A, ndim, verbose = verbose)
+  }
+  coords
+}
+
+rspectra_laplacian_eigenmap <- function(A, ndim = 2, verbose = FALSE) {
   if (nrow(A) < 3) {
     tsmessage("Graph too small, using random initialization instead")
     return(rand_init(nrow(A), ndim))
   }
-
-  tsmessage("Initializing from Laplacian Eigenmap")
+  
+  tsmessage("Initializing from Laplacian Eigenmap (via RSpectra)")
   # Equivalent to: D <- diag(colSums(A)); M <- solve(D) %*% A
   # This effectively row-normalizes A: colSums is normally faster than rowSums
   # and because A is symmetric, they're equivalent
   M <- A / colSums(A)
-
   res <- rspectra_eigs_asym(M, ndim)
-
   if (is.null(res) || ncol(res$vectors) < ndim) {
     message(
       "Laplacian Eigenmap failed to converge, ",
@@ -41,6 +49,27 @@ laplacian_eigenmap <- function(A, ndim = 2, verbose = FALSE) {
   
   # return the smallest eigenvalues
   as.matrix(Re(res$vectors[, 2:(ndim + 1)]))
+}
+
+irlba_laplacian_eigenmap <- function(A, ndim = 2, verbose = FALSE) {
+  if (nrow(A) < 3) {
+    tsmessage("Graph too small, using random initialization instead")
+    return(rand_init(nrow(A), ndim))
+  }
+  tsmessage("Initializing from Laplacian Eigenmap (via irlba)")
+
+  lapA <- form_modified_laplacian(A, ret_d = TRUE)
+  res <- irlba_spectral_tsvd(lapA$L, ndim + 1)
+  if (is.null(res) || ncol(res$vectors) < ndim || !res$converged) {
+    message(
+      "Laplacian Eigenmap failed to converge, ",
+      "using random initialization instead"
+    )
+    return(rand_init(nrow(A), ndim))
+  }
+  res <- lapA$Disqrt * res$vectors[, 2:(ndim + 1), drop = FALSE]
+  # re-scale the vectors to length 1
+  sweep(res, 2, sqrt(colSums(res * res)), `/`)
 }
 
 form_normalized_laplacian <- function(A) {
@@ -56,14 +85,40 @@ form_normalized_laplacian <- function(A) {
   L
 }
 
+# The symmetrized graph Laplacian (Lsym) but shifted so that:
+# the bottom eigenvectors of Lsym correspond to the top singular vectors of
+# this matrix (hence can be used with truncated SVD), and the eigenvalues
+# are all positive, so we don't lose sign and hence correct eigenvector ordering
+# when using the singular values (lambda = 2 - d)
+form_modified_laplacian <- function(A, ret_d = FALSE) {
+  Dsq <- sqrt(Matrix::colSums(A))
+  L <- Matrix::t(A / Dsq) / Dsq
+  Matrix::diag(L) <- 1 + Matrix::diag(L)
+  if (ret_d) {
+    list(L = L, Disqrt = 1 / Dsq)
+  }
+  else {
+    L
+  }
+}
+
 # Return the ndim eigenvectors associated with the ndim largest eigenvalues
 sort_eigenvectors <- function(eig_res, ndim) {
   vec_indices <- rev(order(eig_res$values, decreasing = TRUE)[1:ndim])
   as.matrix(Re(eig_res$vectors[, vec_indices]))
 }
 
-# Use a normalized Laplacian.
-normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE) {
+normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE, force_irlba = FALSE) {
+  if (rspectra_is_installed() && !force_irlba) {
+    coords <- rspectra_normalized_laplacian_init(A, ndim, verbose = verbose)
+  }
+  else {
+    coords <- irlba_normalized_laplacian_init(A, ndim, verbose = verbose)
+  }
+  coords
+}
+
+rspectra_normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE) {
   if (nrow(A) < 3) {
     tsmessage("Graph too small, using random initialization instead")
     return(rand_init(nrow(A), ndim))
@@ -71,7 +126,7 @@ normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE) {
   tsmessage("Initializing from normalized Laplacian")
 
   L <- form_normalized_laplacian(A)
-  res <- rspectra_eigs_sym(L, ndim)
+  res <- rspectra_eigs_sym(L, ndim, verbose = verbose)
 
   if (is.null(res) || ncol(res$vectors) < ndim) {
     message(
@@ -82,6 +137,32 @@ normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE) {
     return(rand_init(n, ndim))
   }
   sort_eigenvectors(res, ndim)
+}
+
+# Use a normalized Laplacian and use truncated SVD
+irlba_tsvd_normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE) {
+  if (nrow(A) < 3) {
+    tsmessage("Graph too small, using random initialization instead")
+    return(rand_init(nrow(A), ndim))
+  }
+  tsmessage("Initializing from normalized Laplacian")
+  
+  L <- form_modified_laplacian(A)
+  res <- irlba_spectral_tsvd(L, ndim + 1)
+  if (is.null(res) || ncol(res$vectors) < ndim || !res$converged) {
+    message(
+      "Spectral initialization failed to converge, ",
+      "using random initialization instead"
+    )
+    n <- nrow(A)
+    return(rand_init(n, ndim))
+  }
+  res$vectors[, 2:(ndim + 1), drop = FALSE]
+}
+
+irlba_spectral_tsvd <- function(L, n, iters = 1000) {
+  suppressWarnings(res <- irlba::irlba(L, nv = n, nu = 0, maxit = iters))
+  list(vectors = res$v, values = 2.0 - res$d, converged = res$iter != iters)
 }
 
 irlba_eigs_asym <- function(L, ndim) {
@@ -101,23 +182,25 @@ irlba_eigs_asym <- function(L, ndim) {
   error = function(c) {
     NULL
   }))
+  res
 }
 
-irlba_eigs_sym <- function(L, ndim) {
+irlba_eigs_sym <- function(L, ndim, smallest = TRUE) {
   suppressWarnings(res <- tryCatch(
     res <- irlba::partial_eigen(
       L,
       n = ndim + 1,
       symmetric = TRUE,
-      smallest = TRUE,
+      smallest = smallest,
       tol = 1e-3,
       maxit = 1000,
-      verbose = TRUE
+      verbose = FALSE
     ),
     error = function(c) {
       NULL
     }
   ))
+  res
 }
 
 # Use irlba's partial_eigen instead of RSpectra
@@ -128,9 +211,13 @@ irlba_normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE) {
   }
   tsmessage("Initializing from normalized Laplacian (using irlba)")
 
-  L <- form_normalized_laplacian(A)
-  res <- irlba_eigs_sym(L, ndim)
-
+  # Using the normalized Laplacian and looking for smallest eigenvalues does
+  # not work well with irlba's partial_eigen routine, so form the shifted
+  # Laplacian and look for largest eigenvalues
+  L <- form_modified_laplacian(A)
+  res <- irlba_eigs_sym(L, ndim, smallest = FALSE)
+  # shift back the eigenvalues
+  res$values <- 2.0 - res$values
   if (is.null(res) || ncol(res$vectors) < ndim) {
     message(
       "Spectral initialization failed to converge, ",
@@ -145,18 +232,20 @@ irlba_normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE) {
 
 # Default UMAP initialization
 # spectral decomposition of the normalized Laplacian + some noise
-spectral_init <- function(A, ndim = 2, verbose = FALSE) {
+spectral_init <- function(A, ndim = 2, verbose = FALSE, force_irlba = FALSE) {
   if (nrow(A) < 3) {
     tsmessage("Graph too small, using random initialization instead")
     return(rand_init(nrow(A), ndim))
   }
-  tsmessage("Initializing from normalized Laplacian + noise")
-
-  coords <- normalized_laplacian_init(A, ndim, verbose = FALSE)
-  expansion <- 10.0 / max(abs(coords))
-  (coords * expansion) + matrix(stats::rnorm(n = prod(dim(coords)), sd = 0.0001),
-    ncol = ndim
-  )
+  if (rspectra_is_installed() && !force_irlba) {
+    tsmessage("Initializing from normalized Laplacian + noise (using RSpectra)")
+    coords <- rspectra_normalized_laplacian_init(A, ndim, verbose = FALSE)
+  }
+  else {
+    tsmessage("Initializing from normalized Laplacian + noise (using irlba)")
+    coords <- irlba_tsvd_normalized_laplacian_init(A, ndim, verbose = FALSE)
+  }
+  scale_and_jitter(coords, max_coord = 10.0, sd = 0.0001)
 }
 
 irlba_spectral_init <- function(A, ndim = 2, verbose = FALSE) {
@@ -167,9 +256,15 @@ irlba_spectral_init <- function(A, ndim = 2, verbose = FALSE) {
   tsmessage("Initializing from normalized Laplacian (using irlba) + noise")
 
   coords <- irlba_normalized_laplacian_init(A, ndim, verbose = FALSE)
-  expansion <- 10.0 / max(coords)
-  (coords * expansion) + matrix(stats::rnorm(n = prod(dim(coords)), sd = 0.001),
-    ncol = ndim
+  scale_and_jitter(coords, max_coord = 10.0, sd = 0.0001)
+}
+
+# Scales coords so that the largest absolute coordinate is 10.0 then jitters by
+# adding gaussian noise with mean 0 and standard deviation sd
+scale_and_jitter <- function(coords, max_coord = 10.0, sd = 0.0001) {
+   expansion <- 10.0 / max(abs(coords))
+  (coords * expansion) + matrix(stats::rnorm(n = prod(dim(coords)), sd = sd),
+    ncol = ncol(coords)
   )
 }
 
@@ -195,35 +290,30 @@ rand_init_lv <- function(n, ndim, verbose = FALSE) {
 # Rescale embedding so that the standard deviation is the specified value.
 # Default gives initialization like t-SNE, but not random. Large initial
 # distances lead to small gradients, and hence small updates, so should be
-# avoided
-shrink_coords <- function(X, sdev = 1e-4) {
-  scale(X, scale = apply(X, 2, stats::sd) / sdev)
+# avoided.
+scale_coords <- function(X, sdev = 1e-4, verbose = FALSE) {
+  if (is.null(sdev)) {
+    return(X)
+  }
+  tsmessage("Scaling init to sdev = ", sdev)
+  scale_factor <- apply(X, 2, stats::sd)
+  scale(X, scale = scale_factor / sdev)
 }
 
 # PCA
-pca_init <- function(X, ndim = 2, center = TRUE, pca_method = "irlba",
-                     verbose = FALSE) {
-  tsmessage("Initializing from PCA")
-  pca_scores(X,
-    ncol = ndim, center = center, pca_method = pca_method,
-    verbose = verbose
-  )
-}
-
-
-# Calculates a matrix containing the first ncol columns of the PCA scores.
+# Calculates a matrix containing the first ndim columns of the PCA scores.
 # Returns the score matrix unless ret_extra is TRUE, in which case a list
 # is returned also containing the eigenvalues
-pca_scores <- function(X, ncol = min(dim(X)), center = TRUE, ret_extra = FALSE,
+pca_init <- function(X, ndim = min(dim(X)), center = TRUE, ret_extra = FALSE,
                        pca_method = "auto", verbose = FALSE) {
   if (methods::is(X, "dist")) {
-    res_mds <- stats::cmdscale(X, x.ret = TRUE, eig = TRUE, k = ncol)
+    res_mds <- stats::cmdscale(X, x.ret = TRUE, eig = TRUE, k = ndim)
 
     if (ret_extra || verbose) {
       lambda <- res_mds$eig
-      varex <- sum(lambda[1:ncol]) / sum(lambda)
+      varex <- sum(lambda[1:ndim]) / sum(lambda)
       tsmessage(
-        "PCA (using classical MDS): ", ncol, " components explained ",
+        "PCA (using classical MDS): ", ndim, " components explained ",
         formatC(varex * 100), "% variance"
       )
     }
@@ -232,9 +322,9 @@ pca_scores <- function(X, ncol = min(dim(X)), center = TRUE, ret_extra = FALSE,
   }
 
   # irlba warns about using too large a percentage of total singular value
-  # so don't use if dataset is small compared to ncol
+  # so don't use if dataset is small compared to ndim
   if (pca_method == "auto") {
-    if (ncol < 0.5 * min(dim(X))) {
+    if (ndim < 0.5 * min(dim(X))) {
       pca_method <- "irlba"
     } else {
       pca_method <- "svd"
@@ -260,13 +350,13 @@ pca_scores <- function(X, ncol = min(dim(X)), center = TRUE, ret_extra = FALSE,
     stop("BUG: unknown svd method '", pca_method, "'")
   )
 
-  pca_fun(
+  do.call(pca_fun, list(
     X = X,
-    ncol = ncol,
+    ncol = ndim,
     center = center,
     ret_extra = ret_extra,
     verbose = verbose
-  )
+  ))
 }
 
 # Get scores by SVD
@@ -457,7 +547,7 @@ init_is_spectral <- function(init) {
 }
 
 rand_nbr_graph <- function(n_vertices, n_nbrs, val) {
-  nn_to_sparse(rand_nbr_idx(n_vertices, n_nbrs),
+  nng_to_sparse(rand_nbr_idx(n_vertices, n_nbrs),
     val = val,
     max_nbr_id = n_vertices
   )
