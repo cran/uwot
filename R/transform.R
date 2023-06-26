@@ -139,8 +139,55 @@
 #'     (Nmodel, \code{n_components}) where \code{Nmodel} is the number of
 #'     observations in the original data.
 #'   }
+#' @param ret_extra A vector indicating what extra data to return. May contain
+#'   any combination of the following strings:
+#'   \itemize{
+#'     \item \code{"fgraph"} the high dimensional fuzzy graph (i.e. the fuzzy
+#'       simplicial set of the merged local views of the input data). The graph
+#'       is returned as a sparse matrix of class \link[Matrix]{dgCMatrix-class}
+#'       with dimensions \code{NX} x \code{Nmodel}, where \code{NX} is the number
+#'       of items in the data to transform in \code{X}, and \code{NModel} is
+#'       the number of items in the data used to build the UMAP \code{model}.
+#'       A non-zero entry (i, j) gives the membership strength of the edge
+#'       connecting the vertex representing the ith item in \code{X} to the
+#'       jth item in the data used to build the \code{model}. Note that the
+#'       graph is further sparsified by removing edges with sufficiently low
+#'       membership strength that they would not be sampled by the probabilistic
+#'       edge sampling employed for optimization and therefore the number of
+#'       non-zero elements in the matrix is dependent on \code{n_epochs}. If you
+#'       are only interested in the fuzzy input graph (e.g. for clustering),
+#'       setting \code{n_epochs = 0} will avoid any further sparsifying.
+#'   }
+#' @param seed Integer seed to use to initialize the random number generator
+#'   state. Combined with \code{n_sgd_threads = 1} or \code{batch = TRUE}, this
+#'   should give consistent output across multiple runs on a given installation.
+#'   Setting this value is equivalent to calling \code{\link[base]{set.seed}},
+#'   but it may be more convenient in some situations than having to call a
+#'   separate function. The default is to not set a seed, in which case this
+#'   function uses the behavior specified by the supplied \code{model}: If the
+#'   model specifies a seed, then the model seed will be used to seed then
+#'   random number generator, and results will still be consistent (if
+#'   \code{n_sgd_threads = 1}). If you want to force the seed to not be set,
+#'   even if it is set in \code{model}, set \code{seed = FALSE}.
 #' @return A matrix of coordinates for \code{X} transformed into the space
-#'   of the \code{model}.
+#'   of the \code{model}, or if \code{ret_extra} is specified, a list
+#'   containing:
+#'   \itemize{
+#'     \item \code{embedding} the matrix of optimized coordinates.
+#'     \item if \code{ret_extra} contains \code{"fgraph"}, an item of the same
+#'     name containing the high-dimensional fuzzy graph as a sparse matrix, of
+#'     type \link[Matrix]{dgCMatrix-class}.
+#'     \item if \code{ret_extra} contains \code{"sigma"}, returns a vector of
+#'     the smooth knn distance normalization terms for each observation as
+#'     \code{"sigma"} and a vector \code{"rho"} containing the largest
+#'     distance to the locally connected neighbors of each observation.
+#'     \item if \code{ret_extra} contains \code{"localr"}, an item of the same
+#'     name containing a vector of the estimated local radii, the sum of
+#'     \code{"sigma"} and \code{"rho"}.
+#'     \item if \code{ret_extra} contains \code{"nn"}, an item of the same name
+#'     containing the nearest neighbors of each item in \code{X} (with respect
+#'     to the items that created the \code{model}).
+#'   }
 #' @examples
 #'
 #' iris_train <- iris[1:100, ]
@@ -164,7 +211,9 @@ umap_transform <- function(X = NULL, model = NULL,
                            batch = NULL,
                            learning_rate = NULL,
                            opt_args = NULL,
-                           epoch_callback = NULL
+                           epoch_callback = NULL,
+                           ret_extra = NULL,
+                           seed = NULL
                            ) {
   if (is.null(n_threads)) {
     n_threads <- default_num_threads()
@@ -203,6 +252,30 @@ umap_transform <- function(X = NULL, model = NULL,
     }
   }
 
+  # Handle setting the random number seed internally:
+  # 1. If the user specifies seed = FALSE, definitely don't set the seed, even
+  # if the model has a seed.
+  # 2. If the user specifies seed = integer, then use that seed, even if the
+  # model has a seed.
+  # 3. If the user does not specify a seed, then use the model seed, if it
+  # exists. Otherwise don't set a seed. Also use this code path if the user
+  # sets seed = TRUE
+  if (is.logical(seed) && !seed) {
+    # do nothing
+  }
+  # handle the seed = TRUE case in this clause too
+  else if (is.logical(seed) || is.null(seed)) {
+    if (!is.null(model$seed)) {
+      tsmessage("Setting model random seed ", model$seed)
+      set.seed(model$seed)
+    }
+    # otherwise no model seed, so do nothing
+  }
+  else {
+    tsmessage("Setting random seed ", seed)
+    set.seed(seed)
+  }
+
   if (is.null(search_k)) {
     search_k <- model$search_k
   }
@@ -218,6 +291,9 @@ umap_transform <- function(X = NULL, model = NULL,
     stop("Invalid embedding coordinates: should be a matrix, but got ",
          paste0(class(train_embedding), collapse = " "))
   }
+  if (any(is.na(train_embedding))) {
+    stop("Model embedding coordinates contains NA values")
+  }
   n_train_vertices <- nrow(train_embedding)
   ndim <- ncol(train_embedding)
   row.names(train_embedding) <- NULL
@@ -232,7 +308,7 @@ umap_transform <- function(X = NULL, model = NULL,
 
   if (method == "leopold") {
     dens_scale <- model$dens_scale
-    ai <- model$ai
+    aj <- model$ai
     rad_coeff <- model$rad_coeff
   }
 
@@ -275,6 +351,10 @@ umap_transform <- function(X = NULL, model = NULL,
     pcg_rand <- TRUE
   }
   num_precomputed_nns <- model$num_precomputed_nns
+  binary_edge_weights <- model$binary_edge_weights
+  if (is.null(binary_edge_weights)) {
+    binary_edge_weights <- FALSE
+  }
 
   # the number of model vertices
   n_vertices <- NULL
@@ -374,6 +454,9 @@ umap_transform <- function(X = NULL, model = NULL,
              xdim[1], ", ", xdim[2], "), but was (",
              indim[1], ", ", indim[2], ")")
       }
+      if (any(is.na(init))) {
+        stop("Initial embedding matrix coordinates contains NA values")
+      }
       if (is.null(Xnames) && !is.null(row.names(init))) {
         Xnames <- row.names(init)
       }
@@ -404,7 +487,15 @@ umap_transform <- function(X = NULL, model = NULL,
   graph <- NULL
   embedding <- NULL
   localr <- NULL
-  need_sigma <- method == "leopold" && nblocks == 1
+  sigma <- NULL
+  rho <- NULL
+  export_nns <- NULL
+  ret_nn <- FALSE
+  if ("nn" %in% ret_extra) {
+    ret_nn <- TRUE
+    export_nns <- list()
+  }
+  need_sigma <- (method == "leopold" && nblocks == 1) || "sigma" %in% ret_extra
   for (i in 1:nblocks) {
     tsmessage("Processing block ", i, " of ", nblocks)
     if (!is.null(X)) {
@@ -432,11 +523,18 @@ umap_transform <- function(X = NULL, model = NULL,
                          prep_data = TRUE,
                          tmpdir = tmpdir,
                          n_threads = n_threads, grain_size = grain_size,
-                         verbose = verbose
-      )
+                         verbose = verbose)
+      if (ret_nn) {
+        export_nns[[i]] <- nn
+        names(export_nns)[[i]] <- ann$metric
+      }
     } else if (is.list(nn_method)) {
       # otherwise we expect a list of NN graphs
       nn <- nn_method[[i]]
+      if (ret_nn) {
+        export_nns[[i]] <- nn
+        names(export_nns)[[i]] <- "precomputed"
+      }
     }
     else {
       stop("Can't transform new data if X is NULL ",
@@ -497,6 +595,8 @@ umap_transform <- function(X = NULL, model = NULL,
       # to that used to generate the "training" data but sigma is larger, so
       # let's just stick with sigma + rho even though it tends to be an
       # underestimate
+      sigma <- sknn_res$sigma
+      rho <- sknn_res$rho
       localr <- sknn_res$sigma + sknn_res$rho
     }
 
@@ -537,7 +637,8 @@ umap_transform <- function(X = NULL, model = NULL,
       graph <- graph_block
     }
     else {
-      graph <- set_intersect(graph, graph_block, weight = 0.5, reset = FALSE)
+      graph <- set_intersect(graph, graph_block, weight = 0.5,
+                             reset_connectivity = FALSE)
     }
   }
 
@@ -549,6 +650,11 @@ umap_transform <- function(X = NULL, model = NULL,
   else {
     tsmessage("Initializing from user-supplied matrix")
     embedding <- t(init)
+  }
+
+  if (binary_edge_weights) {
+    tsmessage("Using binary edge weights")
+    graph@x <- rep(1, length(graph@x))
   }
 
   if (n_epochs > 0) {
@@ -597,12 +703,12 @@ umap_transform <- function(X = NULL, model = NULL,
     method <- tolower(method)
     if (method == "leopold") {
       # Use the linear model 2 log ai = -m log(localr) + c
-      aj <- exp(0.5 * ((-log(localr) * rad_coeff[2]) + rad_coeff[1]))
+      ai <- exp(0.5 * ((-log(localr) * rad_coeff[2]) + rad_coeff[1]))
       # Prevent too-small/large aj
-      min_aj <- min(sqrt(a * 10 ^ (-2 * dens_scale)), 0.1)
-      aj[aj < min_aj] <- min_aj
-      max_aj <- sqrt(a * 10 ^ (2 * dens_scale))
-      aj[aj > max_aj] <- max_aj
+      min_ai <- min(sqrt(a * 10 ^ (-2 * dens_scale)), 0.1)
+      ai[ai < min_ai] <- min_ai
+      max_ai <- sqrt(a * 10 ^ (2 * dens_scale))
+      ai[ai > max_ai] <- max_ai
       method <- "leopold2"
     }
 
@@ -643,7 +749,30 @@ umap_transform <- function(X = NULL, model = NULL,
   if (!is.null(Xnames)) {
     row.names(embedding) <- Xnames
   }
-  embedding
+  if (length(ret_extra) > 0) {
+    res <- list(embedding = embedding)
+    for (name in ret_extra) {
+      if (name == "fgraph") {
+        res$fgraph <- graph
+      }
+      if (name == "sigma") {
+        res$sigma <- sigma
+        res$rho <- rho
+      }
+      if (name == "localr" && !is.null(localr)) {
+        res$localr <- localr
+      }
+      if (ret_nn && !is.null(export_nns)) {
+        res$nn <- export_nns
+      }
+    }
+
+  }
+  else {
+    res <- embedding
+  }
+
+  res
 }
 
 init_new_embedding <-

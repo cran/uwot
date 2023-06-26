@@ -82,3 +82,34 @@ expect_error(trans <- umap_transform(iris[0, ], model = model), "Not enough rows
 # bad min_dist/spread
 expect_error(umap(iris, spread = 1, min_dist = 20), "a, b")
 
+# n_components too high
+expect_warning(
+  umap(
+    iris10,
+    n_components = 50,
+    ret_model = TRUE,
+    init = "rand",
+    n_neighbors = 4,
+    n_epochs = 0
+  ),
+  "n_components >"
+)
+
+suppressWarnings(expect_error(umap(iris[1:100,], n_components = 10),
+                              "Initial data contains NA"))
+
+# user-supplied intialization should not contain NA
+transform_init <- model$embedding[1:5, ]
+transform_init[1, 1] <- NA
+expect_error(trans <- umap_transform(iris[51:55, ], model = model, init = transform_init), "contains NA")
+
+# model embedding coords should also not contain NA
+old11 <- model$embedding[1, 1]
+model$embedding[1, 1] <- NA
+expect_error(trans <- umap_transform(iris[51:55, ], model = model), "contains NA")
+model$embedding[1, 1] <- old11
+
+# 110: warn if standard deviation of initial input could create small gradients
+expect_warning(umap(iris10, init_sdev = 100.0, n_neighbors = 4),
+               "embedding standard deviation")
+

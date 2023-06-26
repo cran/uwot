@@ -156,7 +156,7 @@ res <- lvish(iris10,
   init = "lvrand", verbose = FALSE, n_threads = 1, ret_extra = c("sigma")
 )
 expect_ok_matrix(res$embedding)
-expect_equal(res$sigma, c(0.3039, 0.2063, 0.09489, 0.08811, 0.3091, 0.6789, 0.1743, 0.1686, 0.3445, 0.1671), tol = 1e-4)
+expect_equal(res$sigma, sqrt(c(0.3039, 0.2063, 0.09489, 0.08811, 0.3091, 0.6789, 0.1743, 0.1686, 0.3445, 0.1671)), tol = 1e-4)
 
 # lvish with knn
 res <- lvish(iris10,
@@ -173,9 +173,25 @@ res <- umap(iris10,
 )
 expect_is(res, "list")
 expect_ok_matrix(res$embedding)
+# #95: export min_dist and spread in returned model
+expect_equal(res$min_dist, 0.001)
+expect_equal(res$spread, 1)
+
+resab <- umap(iris10,
+            n_neighbors = 4, n_epochs = 2, learning_rate = 0.5, a = 1, b = 0.9,
+            init = "rand", verbose = FALSE, n_threads = 1,
+            ret_model = TRUE
+)
+expect_equal(resab$a, 1)
+expect_equal(resab$b, 0.9)
+# min_dist and spread in returned model are NULL if a and b are set
+expect_null(resab$min_dist)
+expect_null(resab$spread)
+
 
 res_test <- umap_transform(iris10, res, n_threads = 1, verbose = FALSE)
 expect_ok_matrix(res_test)
+
 
 # test we can use 0 epochs
 res_test0 <- umap_transform(iris10, res, n_epochs = 0, n_threads = 1, verbose = FALSE)
@@ -786,3 +802,209 @@ umap_test_2 <- umap_transform(X = NULL, model = umap_train_x,
                               nn_method = query_ref_nn)
 expect_equal(umap_test_1, umap_test_2)
 
+
+
+res <- umap(iris10,
+            n_neighbors = 4, n_epochs = 2, learning_rate = 0.5,
+            init = "laplacian", verbose = FALSE, n_threads = 0,
+            init_sdev = 0.1
+)
+expect_ok_matrix(res)
+
+# 99 init_sdev = "range" range scales input data columns 0-10
+res <- umap(iris10, n_neighbors = 4, init_sdev = "range", n_epochs = 0)
+expect_equal(apply(res, 2, range), matrix(c(0, 10, 0, 10), ncol = 2))
+
+# 101 intersect and union
+test_that("intersect and union", {
+  # expected values are confirmed via the python implementation
+  iris10_12 <-
+    as(Matrix::drop0(matrix(c(
+      0.0000000e+00, 0.0000000e+00, 0.0000000e+00, 0.0000000e+00,
+      1.0000000e+00, 1.0000000e+00, 0.0000000e+00, 1.0000000e+00,
+      0.0000000e+00, 3.1662715e-09,
+      0.0000000e+00, 0.0000000e+00, 5.2903235e-01, 4.7097012e-01,
+      0.0000000e+00, 0.0000000e+00, 0.0000000e+00, 0.0000000e+00,
+      4.1861886e-01, 1.0000000e+00,
+      0.0000000e+00, 5.2903235e-01, 0.0000000e+00, 1.0000000e+00,
+      0.0000000e+00, 0.0000000e+00, 1.0000000e+00, 0.0000000e+00,
+      5.8137214e-01, 7.9134369e-01,
+      0.0000000e+00, 4.7097012e-01, 1.0000000e+00, 0.0000000e+00,
+      0.0000000e+00, 0.0000000e+00, 8.1357503e-01, 0.0000000e+00,
+      1.0000000e+00, 4.1732001e-01,
+      1.0000000e+00, 0.0000000e+00, 0.0000000e+00, 0.0000000e+00,
+      0.0000000e+00, 1.0000000e+00, 2.3949760e-01, 9.2372406e-01,
+      0.0000000e+00, 0.0000000e+00,
+      1.0000000e+00, 0.0000000e+00, 0.0000000e+00, 0.0000000e+00,
+      1.0000000e+00, 0.0000000e+00, 0.0000000e+00, 1.5851905e-08,
+      0.0000000e+00, 0.0000000e+00,
+      0.0000000e+00, 0.0000000e+00, 1.0000000e+00, 8.1357503e-01,
+      2.3949760e-01, 0.0000000e+00, 0.0000000e+00, 3.5861197e-01,
+      0.0000000e+00, 0.0000000e+00,
+      1.0000000e+00, 0.0000000e+00, 0.0000000e+00, 0.0000000e+00,
+      9.2372406e-01, 1.5851905e-08, 3.5861197e-01, 0.0000000e+00,
+      0.0000000e+00, 3.1848407e-01,
+      0.0000000e+00, 4.1861886e-01, 5.8137214e-01, 1.0000000e+00,
+      0.0000000e+00, 0.0000000e+00, 0.0000000e+00, 0.0000000e+00,
+      0.0000000e+00, 0.0000000e+00,
+      3.1662715e-09, 1.0000000e+00, 7.9134369e-01, 4.1732001e-01,
+      0.0000000e+00, 0.0000000e+00, 0.0000000e+00, 3.1848407e-01,
+      0.0000000e+00, 0.0000000e+00),
+    byrow = TRUE, nrow = 10)), "generalMatrix")
+
+  iris10_34 <-
+    as(Matrix::drop0(matrix(c(
+      0.000000e+00, 1.000000e+00, 1.000000e+00, 9.995531e-01, 1.000000e+00,
+      0.000000e+00, 1.000000e+00, 9.995531e-01, 1.000000e+00, 6.160182e-10,
+      # 2
+      1.000000e+00, 0.000000e+00, 1.000000e+00, 0.000000e+00, 1.000000e+00,
+      0.000000e+00, 1.000000e+00, 0.000000e+00, 1.000000e+00, 0.000000e+00,
+      # 3
+      1.000000e+00, 1.000000e+00, 0.000000e+00, 0.000000e+00, 1.000000e+00,
+      0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+      # 4
+      9.995531e-01, 0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+      1.000000e+00, 0.000000e+00, 1.000000e+00, 0.000000e+00, 1.000000e+00,
+      # 5
+      1.000000e+00, 1.000000e+00, 1.000000e+00, 0.000000e+00, 0.000000e+00,
+      0.000000e+00, 1.000000e+00, 0.000000e+00, 1.000000e+00, 0.000000e+00,
+      # 6
+      0.000000e+00, 0.000000e+00, 0.000000e+00, 1.000000e+00, 0.000000e+00,
+      0.000000e+00, 3.771700e-08, 1.000000e+00, 0.000000e+00, 0.000000e+00,
+      # 7
+      1.000000e+00, 1.000000e+00, 0.000000e+00, 0.000000e+00, 1.000000e+00,
+      3.771700e-08, 0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+      # 8
+      9.995531e-01, 0.000000e+00, 0.000000e+00, 1.000000e+00, 0.000000e+00,
+      1.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00, 1.000000e+00,
+      # 9
+      1.000000e+00, 1.000000e+00, 0.000000e+00, 0.000000e+00, 1.000000e+00,
+      0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+      # 10
+      6.160182e-10, 0.000000e+00, 0.000000e+00, 1.000000e+00, 0.000000e+00,
+      0.000000e+00, 0.000000e+00, 1.000000e+00, 0.000000e+00, 0.000000e+00),
+      byrow = TRUE, nrow = 10)), "generalMatrix")
+
+  expected_intersect <- matrix(c(
+    0.0, 0.55551356, 0.6280843, 0.5780957, 1.0, 0.9556667, 0.65937775, 1.0, 0.8031627, 0.7241592,
+    0.55551356, 0.0, 1.0, 0.6247057, 0.62943524, 0.0, 0.7119533, 0.0, 1.0, 0.78192693,
+    0.6280843, 1.0, 0.0, 0.701477, 0.68993694, 0.0, 0.7589823, 0.0, 0.85413647, 0.8139497,
+    0.5780957, 0.6247057, 0.701477, 0.0, 0.0, 0.96441525, 0.7222059, 0.7034965, 0.84200585, 1.0,
+    1.0, 0.62943524, 0.68993694, 0.0, 0.0, 0.96303976, 0.99999994, 0.69032043, 0.8358984, 0.0,
+    0.9556667, 0.0, 0.0, 0.96441525, 0.96303976, 0.0, 0.345057, 1.0, 0.0, 0.0,
+    0.65937775, 0.7119533, 0.7589823, 0.7222059, 0.99999994, 0.345057, 0.0, 0.7411224, 0.0, 0.0,
+    1.0, 0.0, 0.0, 0.7034965, 0.69032043, 1.0, 0.7411224, 0.0, 0.0, 0.999708,
+    0.8031627, 1.0, 0.85413647, 0.84200585, 0.8358984, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.7241592, 0.78192693, 0.8139497, 1.0, 0.0, 0.0, 0.0, 0.999708, 0.0, 0.0),
+    byrow = TRUE, nrow = 10)
+
+  expect_equal(as.matrix(simplicial_set_intersect(iris10_12, iris10_34)),
+    expected_intersect,
+    tol = 1e-7,
+    check.attributes = FALSE
+  )
+
+  expected_union <- matrix(c(
+   0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0002958188,
+   1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0,
+   1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.90659714,
+   0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0,
+   1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0,
+   1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+   1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+   1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
+   1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+   0.0002958188, 1.0, 0.90659714, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+  byrow = TRUE, nrow = 10)
+
+  expect_equal(as.matrix(simplicial_set_union(iris10_12, iris10_34)),
+               expected_union,
+               tol = 1e-7,
+               check.attributes = FALSE
+  )
+
+  expected_intersect_weighted <- matrix(c(
+    0.0, 0.40025446, 0.39215788, 0.36378226, 1.0, 0.99999994, 0.4569211, 1.0, 0.6892773, 0.51736516,
+    0.40025446, 0.0, 1.0, 0.8227322, 0.4237253, 0.0, 0.4646226, 0.0, 1.0, 0.91525006,
+    0.39215788, 1.0, 0.0, 0.8513419, 0.41594562, 0.0, 0.89491767, 0.0, 0.9377875, 0.906834,
+    0.36378226, 0.8227322, 0.8513419, 0.0, 0.0, 0.7309169, 0.8804487, 0.4460863, 0.94368106, 1.0,
+    1.0, 0.4237253, 0.41594562, 0.0, 0.0, 1.0, 1.0, 0.88101995, 0.70143735, 0.0,
+    0.99999994, 0.0, 0.0, 0.7309169, 1.0, 0.0, 0.6468519, 0.7858214, 0.0, 0.0,
+    0.4569211, 0.4646226, 0.89491767, 0.8804487, 1.0, 0.6468519, 0.0, 0.8816428, 0.0, 0.0,
+    1.0, 0.0, 0.0, 0.4460863, 0.88101995, 0.7858214, 0.8816428, 0.0, 0.0, 0.99908066,
+    0.6892773, 1.0, 0.9377875, 0.94368106, 0.70143735, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.51736516, 0.91525006, 0.906834, 1.0, 0.0, 0.0, 0.0, 0.99908066, 0.0, 0.0),
+  byrow = TRUE, nrow = 10)
+
+  expect_equal(as.matrix(simplicial_set_intersect(iris10_12, iris10_34, weight = 0.25)),
+               expected_intersect_weighted,
+               tol = 1e-7,
+               check.attributes = FALSE
+  )
+})
+
+test_that("can set seed internally", {
+  set.seed(42)
+  res <-
+    umap(
+      iris10,
+      n_neighbors = 4,
+      n_epochs = 10,
+      learning_rate = 0.5,
+      n_sgd_threads = 1
+    )
+  expect_ok_matrix(res)
+
+  # default doesn't reset the seed
+  res2 <-
+    umap(
+      iris10,
+      n_neighbors = 4,
+      n_epochs = 10,
+      learning_rate = 0.5,
+      n_sgd_threads = 1
+    )
+  diff12 <- res - res2
+  expect_gt(sqrt(sum(diff12 * diff12) / length(diff12)), 0.01)
+
+  # set seed internally same as calling set.seed
+  res3 <-
+    umap(
+      iris10,
+      n_neighbors = 4,
+      n_epochs = 10,
+      learning_rate = 0.5,
+      n_sgd_threads = 1,
+      seed = 42
+    )
+  expect_equal(res, res3)
+
+  # creating a model stores the seed but also forces annoy for nearest neighbors
+  # which changes the RNG state more than when FNN can be used internally
+  res_model <-
+    umap(
+      iris10,
+      n_neighbors = 4,
+      n_epochs = 10,
+      learning_rate = 0.5,
+      n_sgd_threads = 1,
+      seed = 42,
+      ret_model = TRUE
+    )
+  expect(res_model$seed, 42)
+  diff1m <- res - res_model$embedding
+  expect_gt(sqrt(sum(diff1m * diff1m) / length(diff1m)), 0.01)
+
+  # explicitly set annoy nn and things are reproducible again
+  res4 <-
+    umap(
+      iris10,
+      n_neighbors = 4,
+      n_epochs = 10,
+      learning_rate = 0.5,
+      n_sgd_threads = 1,
+      seed = 42,
+      nn_method = "annoy"
+    )
+  expect_equal(res_model$embedding, res4)
+})

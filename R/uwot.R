@@ -111,13 +111,13 @@
 #'     \item A matrix of initial coordinates.
 #'   }
 #'  For spectral initializations, (\code{"spectral"}, \code{"normlaplacian"},
-#'  \code{"laplacian"}), if more than one connected component is identified,
-#'  each connected component is initialized separately and the results are
-#'  merged. If \code{verbose = TRUE} the number of connected components are
-#'  logged to the console. The existence of multiple connected components
-#'  implies that a global view of the data cannot be attained with this
-#'  initialization. Either a PCA-based initialization or increasing the value of
-#'  \code{n_neighbors} may be more appropriate.
+#'  \code{"laplacian"}, \code{"agspectral"}), if more than one connected
+#'  component is identified, no spectral initialization is attempted. Instead
+#'  a PCA-based initialization is attempted. If \code{verbose = TRUE} the
+#'  number of connected components are logged to the console. The existence of
+#'  multiple connected components implies that a global view of the data cannot
+#'  be attained with this initialization. Increasing the value of
+#'  \code{n_neighbors} may help.
 #' @param init_sdev If non-\code{NULL}, scales each dimension of the initialized
 #'   coordinates (including any user-supplied matrix) to this standard
 #'   deviation. By default no scaling is carried out, except when \code{init =
@@ -130,7 +130,12 @@
 #'   recommended and \code{init = "spca"} as an alias for \code{init = "pca",
 #'   init_sdev = 1e-4} but for the spectral initializations the scaled versions
 #'   usually aren't necessary unless you are using a large value of
-#'   \code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher).
+#'   \code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher). For
+#'   compatibility with recent versions of the Python UMAP package, if you are
+#'   using \code{init = "spectral"}, then you should also set
+#'   \code{init_sdev = "range"}, which will range scale each of the columns
+#'   containing the initial data between 0-10. This is not set by default to
+#'   maintain backwards compatibility with previous versions of uwot.
 #' @param spread The effective scale of embedded points. In combination with
 #'   \code{min_dist}, this determines how clustered/clumped the embedded points
 #'   are.
@@ -207,6 +212,7 @@
 #' @param approx_pow If \code{TRUE}, use an approximation to the power function
 #'   in the UMAP gradient, from
 #'   \url{https://martin.ankerl.com/2012/01/25/optimized-approximative-pow-in-c-and-cpp/}.
+#'   Ignored if \code{dens_scale} is non-\code{NULL}.
 #' @param y Optional target data for supervised dimension reduction. Can be a
 #' vector, matrix or data frame. Use the \code{target_metric} parameter to
 #' specify the metrics to use, using the same syntax as \code{metric}. Usually
@@ -314,6 +320,14 @@
 #'   that were included via the \code{metric} parameter. In the latter case, the
 #'   model produced is based only on the numeric data. A transformation using
 #'   new data is possible, but the factor columns in the new data are ignored.
+#'   Note that setting \code{ret_model = TRUE} forces the use of the approximate
+#'   nearest neighbors method. Because small datasets would otherwise use exact
+#'   nearest neighbor calculations, setting \code{ret_model = TRUE} means that
+#'   different results may be returned for small datasets in terms of both the
+#'   returned nearest neighbors (if requested) and the final embedded
+#'   coordinates, compared to \code{ret_model = FALSE}, even if the random
+#'   number seed is fixed. To avoid this, explicitly set
+#'   \code{nn_method = "annoy"} in the \code{ret_model = FALSE} case.
 #' @param ret_nn If \code{TRUE}, then in addition to the embedding, also return
 #'   nearest neighbor data that can be used as input to \code{nn_method} to
 #'   avoid the overhead of repeatedly calculating the nearest neighbors when
@@ -420,6 +434,14 @@
 #'   larger the value of \code{dens_scale}, the greater the range of output
 #'   densities that will be used to map the input densities. This option is
 #'   ignored if using multiple \code{metric} blocks.
+#' @param seed Integer seed to use to initialize the random number generator
+#'   state. Combined with \code{n_sgd_threads = 1} or \code{batch = TRUE}, this
+#'   should give consistent output across multiple runs on a given installation.
+#'   Setting this value is equivalent to calling \code{\link[base]{set.seed}},
+#'   but it may be more convenient in some situations than having to call a
+#'   separate function. The default is to not set a seed. If
+#'   \code{ret_model = TRUE}, the seed will be stored in the output model and
+#'   then used to set the seed inside \code{\link{umap_transform}}.
 #' @return A matrix of optimized coordinates, or:
 #'   \itemize{
 #'     \item if \code{ret_model = TRUE} (or \code{ret_extra} contains
@@ -553,7 +575,8 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                  batch = FALSE,
                  opt_args = NULL, epoch_callback = NULL, pca_method = NULL,
                  binary_edge_weights = FALSE,
-                 dens_scale = NULL) {
+                 dens_scale = NULL,
+                 seed = NULL) {
   uwot(
     X = X, n_neighbors = n_neighbors, n_components = n_components,
     metric = metric, n_epochs = n_epochs, alpha = learning_rate, scale = scale,
@@ -583,7 +606,8 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     binary_edge_weights = binary_edge_weights,
     tmpdir = tempdir(),
     verbose = verbose,
-    dens_scale = dens_scale
+    dens_scale = dens_scale,
+    seed = seed
   )
 }
 
@@ -703,13 +727,13 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'     \item A matrix of initial coordinates.
 #'   }
 #'  For spectral initializations, (\code{"spectral"}, \code{"normlaplacian"},
-#'  \code{"laplacian"}), if more than one connected component is identified,
-#'  each connected component is initialized separately and the results are
-#'  merged. If \code{verbose = TRUE} the number of connected components are
-#'  logged to the console. The existence of multiple connected components
-#'  implies that a global view of the data cannot be attained with this
-#'  initialization. Either a PCA-based initialization or increasing the value of
-#'  \code{n_neighbors} may be more appropriate.
+#'  \code{"laplacian"}, \code{"agspectral"}), if more than one connected
+#'  component is identified, no spectral initialization is attempted. Instead
+#'  a PCA-based initialization is attempted. If \code{verbose = TRUE} the
+#'  number of connected components are logged to the console. The existence of
+#'  multiple connected components implies that a global view of the data cannot
+#'  be attained with this initialization. Increasing the value of
+#'  \code{n_neighbors} may help.
 #' @param init_sdev If non-\code{NULL}, scales each dimension of the initialized
 #'   coordinates (including any user-supplied matrix) to this standard
 #'   deviation. By default no scaling is carried out, except when \code{init =
@@ -722,7 +746,12 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   recommended and \code{init = "spca"} as an alias for \code{init = "pca",
 #'   init_sdev = 1e-4} but for the spectral initializations the scaled versions
 #'   usually aren't necessary unless you are using a large value of
-#'   \code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher).
+#'   \code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher). For
+#'   compatibility with recent versions of the Python UMAP package, if you are
+#'   using \code{init = "spectral"}, then you should also set
+#'   \code{init_sdev = "range"}, which will range scale each of the columns
+#'   containing the initial data between 0-10. This is not set by default to
+#'   maintain backwards compatibility with previous versions of uwot.
 #' @param set_op_mix_ratio Interpolate between (fuzzy) union and intersection as
 #'   the set operation used to combine local fuzzy simplicial sets to obtain a
 #'   global fuzzy simplicial sets. Both fuzzy set operations use the product
@@ -887,6 +916,14 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   that were included via the \code{metric} parameter. In the latter case, the
 #'   model produced is based only on the numeric data. A transformation using
 #'   new data is possible, but the factor columns in the new data are ignored.
+#'   Note that setting \code{ret_model = TRUE} forces the use of the approximate
+#'   nearest neighbors method. Because small datasets would otherwise use exact
+#'   nearest neighbor calculations, setting \code{ret_model = TRUE} means that
+#'   different results may be returned for small datasets in terms of both the
+#'   returned nearest neighbors (if requested) and the final embedded
+#'   coordinates, compared to \code{ret_model = FALSE}, even if the random
+#'   number seed is fixed. To avoid this, explicitly set
+#'   \code{nn_method = "annoy"} in the \code{ret_model = FALSE} case.
 #' @param ret_nn If \code{TRUE}, then in addition to the embedding, also return
 #'   nearest neighbor data that can be used as input to \code{nn_method} to
 #'   avoid the overhead of repeatedly calculating the nearest neighbors when
@@ -987,6 +1024,14 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   method (Wang and co-workers, 2020). Practical (Böhm and co-workers, 2020)
 #'   and theoretical (Damrich and Hamprecht, 2021) work suggests this has little
 #'   effect on UMAP's performance.
+#' @param seed Integer seed to use to initialize the random number generator
+#'   state. Combined with \code{n_sgd_threads = 1} or \code{batch = TRUE}, this
+#'   should give consistent output across multiple runs on a given installation.
+#'   Setting this value is equivalent to calling \code{\link[base]{set.seed}},
+#'   but it may be more convenient in some situations than having to call a
+#'   separate function. The default is to not set a seed. If
+#'   \code{ret_model = TRUE}, the seed will be stored in the output model and
+#'   then used to set the seed inside \code{\link{umap_transform}}.
 #' @return A matrix of optimized coordinates, or:
 #'   \itemize{
 #'     \item if \code{ret_model = TRUE} (or \code{ret_extra} contains
@@ -1041,7 +1086,8 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                   batch = FALSE,
                   opt_args = NULL, epoch_callback = NULL,
                   pca_method = NULL,
-                  binary_edge_weights = FALSE) {
+                  binary_edge_weights = FALSE,
+                  seed = NULL) {
   uwot(
     X = X, n_neighbors = n_neighbors, n_components = n_components,
     metric = metric,
@@ -1069,6 +1115,7 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     opt_args = opt_args,
     epoch_callback = epoch_callback,
     binary_edge_weights = binary_edge_weights,
+    seed = seed,
     tmpdir = tmpdir,
     verbose = verbose
   )
@@ -1207,13 +1254,13 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'     \item A matrix of initial coordinates.
 #'   }
 #'  For spectral initializations, (\code{"spectral"}, \code{"normlaplacian"},
-#'  \code{"laplacian"}), if more than one connected component is identified,
-#'  each connected component is initialized separately and the results are
-#'  merged. If \code{verbose = TRUE} the number of connected components are
-#'  logged to the console. The existence of multiple connected components
-#'  implies that a global view of the data cannot be attained with this
-#'  initialization. Either a PCA-based initialization or increasing the value of
-#'  \code{n_neighbors} may be more appropriate.
+#'  \code{"laplacian"}, \code{"agspectral"}), if more than one connected
+#'  component is identified, no spectral initialization is attempted. Instead
+#'  a PCA-based initialization is attempted. If \code{verbose = TRUE} the
+#'  number of connected components are logged to the console. The existence of
+#'  multiple connected components implies that a global view of the data cannot
+#'  be attained with this initialization. Increasing the value of
+#'  \code{n_neighbors} may help.
 #' @param init_sdev If non-\code{NULL}, scales each dimension of the initialized
 #'   coordinates (including any user-supplied matrix) to this standard
 #'   deviation. By default no scaling is carried out, except when \code{init =
@@ -1226,7 +1273,12 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   recommended and \code{init = "spca"} as an alias for \code{init = "pca",
 #'   init_sdev = 1e-4} but for the spectral initializations the scaled versions
 #'   usually aren't necessary unless you are using a large value of
-#'   \code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher).
+#'   \code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher). For
+#'   compatibility with recent versions of the Python UMAP package, if you are
+#'   using \code{init = "spectral"}, then you should also set
+#'   \code{init_sdev = "range"}, which will range scale each of the columns
+#'   containing the initial data between 0-10. This is not set by default to
+#'   maintain backwards compatibility with previous versions of uwot.
 #' @param repulsion_strength Weighting applied to negative samples in low
 #'   dimensional embedding optimization. Values higher than one will result in
 #'   greater weight being given to negative samples.
@@ -1433,6 +1485,10 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'     \item if \code{ret_extra} contains \code{"P"}, returns the high
 #'     dimensional probability matrix as a sparse matrix called \code{P}, of
 #'     type \link[Matrix]{dgCMatrix-class}.
+#'     \item if \code{ret_extra} contains \code{"sigma"}, returns a vector of
+#'     the high dimensional gaussian bandwidths for each point, and
+#'     \code{"dint"} a vector of estimates of the intrinsic dimensionality at
+#'     each point, based on the method given by Lee and co-workers (2015).
 #'   }
 #'   The returned list contains the combined data from any combination of
 #'   specifying \code{ret_nn} and \code{ret_extra}.
@@ -1443,6 +1499,11 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' (pp. 287-297).
 #' International World Wide Web Conferences Steering Committee.
 #' \url{https://arxiv.org/abs/1602.00370}
+#'
+#' Lee, J. A., Peluffo-Ordóñez, D. H., & Verleysen, M. (2015).
+#' Multi-scale similarities in stochastic neighbour embedding: Reducing
+#' dimensionality while preserving both local and global structure.
+#' \emph{Neurocomputing}, \emph{169}, 246-261.
 #'
 #' @examples
 #' # Default number of epochs is much larger than for UMAP, assumes random
@@ -1900,6 +1961,443 @@ similarity_graph <- function(X = NULL, n_neighbors = NULL, metric = "euclidean",
   res
 }
 
+#' Optimize Graph Layout
+#'
+#' Carry out dimensionality reduction on an input graph, where the distances in
+#' the low dimensional space attempt to reproduce the neighbor relations in the
+#' input data. By default, the cost function used to optimize the output
+#' coordinates use the Uniform Manifold Approximation and Projection (UMAP)
+#' method (McInnes et al., 2018), but the approach from LargeVis (Tang et al.,
+#' 2016) can also be used. This function can be used to produce a low
+#' dimensional representation of the graph produced by
+#' \code{\link{similarity_graph}}.
+#'
+#' @param graph A sparse, symmetric N x N weighted adjacency matrix
+#'   representing a graph. Non-zero entries indicate an edge between two nodes
+#'   with a given edge weight. There can be a varying number of non-zero entries
+#'   in each row/column.
+#' @param X Optional input data. Used only for PCA-based initialization.
+#' @param n_components The dimension of the space to embed into. This defaults
+#'   to \code{2} to provide easy visualization, but can reasonably be set to any
+#'   integer value in the range \code{2} to \code{100}.
+#' @param n_epochs Number of epochs to use during the optimization of the
+#'   embedded coordinates. By default, this value is set to \code{500} for
+#'   datasets containing 10,000 vertices or less, and \code{200} otherwise.
+#'   If \code{n_epochs = 0}, then coordinates determined by \code{"init"} will
+#'   be returned.
+#' For UMAP, the default is \code{"none"}.
+#' @param learning_rate Initial learning rate used in optimization of the
+#'   coordinates.
+#' @param init Type of initialization for the coordinates. Options are:
+#'   \itemize{
+#'     \item \code{"spectral"} Spectral embedding using the normalized Laplacian
+#'     of the fuzzy 1-skeleton, with Gaussian noise added.
+#'     \item \code{"normlaplacian"}. Spectral embedding using the normalized
+#'     Laplacian of the fuzzy 1-skeleton, without noise.
+#'     \item \code{"random"}. Coordinates assigned using a uniform random
+#'     distribution between -10 and 10.
+#'     \item \code{"lvrandom"}. Coordinates assigned using a Gaussian
+#'     distribution with standard deviation 1e-4, as used in LargeVis
+#'     (Tang et al., 2016) and t-SNE.
+#'     \item \code{"laplacian"}. Spectral embedding using the Laplacian Eigenmap.
+#'     \item \code{"pca"}. The first two principal components from PCA of
+#'     \code{X} if \code{X} is a data frame, and from a 2-dimensional classical
+#'     MDS if \code{X} is of class \code{"dist"}.
+#'     \item \code{"spca"}. Like \code{"pca"}, but each dimension is then scaled
+#'     so the standard deviation is 1e-4, to give a distribution similar to that
+#'     used in t-SNE. This is an alias for \code{init = "pca", init_sdev =
+#'     1e-4}.
+#'     \item \code{"agspectral"} An "approximate global" modification of
+#'     \code{"spectral"} which all edges in the graph to a value of 1, and then
+#'     sets a random number of edges (\code{negative_sample_rate} edges per
+#'     vertex) to 0.1, to approximate the effect of non-local affinities.
+#'     \item A matrix of initial coordinates.
+#'   }
+#'  For spectral initializations, (\code{"spectral"}, \code{"normlaplacian"},
+#'  \code{"laplacian"}, \code{"agspectral"}), if more than one connected
+#'  component is identified, no spectral initialization is attempted. Instead
+#'  a PCA-based initialization is attempted. If \code{verbose = TRUE} the
+#'  number of connected components are logged to the console. The existence of
+#'  multiple connected components implies that a global view of the data cannot
+#'  be attained with this initialization. Increasing the value of
+#'  \code{n_neighbors} may help.
+#' @param init_sdev If non-\code{NULL}, scales each dimension of the initialized
+#'   coordinates (including any user-supplied matrix) to this standard
+#'   deviation. By default no scaling is carried out, except when \code{init =
+#'   "spca"}, in which case the value is \code{0.0001}. Scaling the input may
+#'   help if the unscaled versions result in initial coordinates with large
+#'   inter-point distances or outliers. This usually results in small gradients
+#'   during optimization and very little progress being made to the layout.
+#'   Shrinking the initial embedding by rescaling can help under these
+#'   circumstances. Scaling the result of \code{init = "pca"} is usually
+#'   recommended and \code{init = "spca"} as an alias for \code{init = "pca",
+#'   init_sdev = 1e-4} but for the spectral initializations the scaled versions
+#'   usually aren't necessary unless you are using a large value of
+#'   \code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher). For
+#'   compatibility with recent versions of the Python UMAP package, if you are
+#'   using \code{init = "spectral"}, then you should also set
+#'   \code{init_sdev = "range"}, which will range scale each of the columns
+#'   containing the initial data between 0-10. This is not set by default to
+#'   maintain backwards compatibility with previous versions of uwot.
+#' @param spread The effective scale of embedded points. In combination with
+#'   \code{min_dist}, this determines how clustered/clumped the embedded points
+#'   are.
+#' @param min_dist The effective minimum distance between embedded points.
+#'   Smaller values will result in a more clustered/clumped embedding where
+#'   nearby points on the manifold are drawn closer together, while larger
+#'   values will result on a more even dispersal of points. The value should be
+#'   set relative to the \code{spread} value, which determines the scale at
+#'   which embedded points will be spread out.
+#' @param repulsion_strength Weighting applied to negative samples in low
+#'   dimensional embedding optimization. Values higher than one will result in
+#'   greater weight being given to negative samples.
+#' @param negative_sample_rate The number of negative edge/1-simplex samples to
+#'   use per positive edge/1-simplex sample in optimizing the low dimensional
+#'   embedding.
+#' @param a More specific parameters controlling the embedding. If \code{NULL}
+#'   these values are set automatically as determined by \code{min_dist} and
+#'   \code{spread}.
+#' @param b More specific parameters controlling the embedding. If \code{NULL}
+#'   these values are set automatically as determined by \code{min_dist} and
+#'   \code{spread}.
+#' @param approx_pow If \code{TRUE}, use an approximation to the power function
+#'   in the UMAP gradient, from
+#'   \url{https://martin.ankerl.com/2012/01/25/optimized-approximative-pow-in-c-and-cpp/}.
+#' @param method Cost function to optimize. One of:
+#' \itemize{
+#'   \item{\code{"umap"}}. The UMAP method of McInnes and co-workers (2018).
+#'   \item{\code{"tumap"}}. UMAP with the \code{a} and \code{b} parameters fixed
+#'   to 1.
+#'   \item{\code{"largevis"}}. The LargeVis method Tang and co-workers (2016).
+#' }
+#' @param pca_method Method to carry out any PCA dimensionality reduction when
+#'   the \code{pca} parameter is specified. Allowed values are:
+#'   \itemize{
+#'     \item{\code{"irlba"}}. Uses \code{\link[irlba]{prcomp_irlba}} from the
+#'     \href{https://cran.r-project.org/package=irlba}{irlba} package.
+#'     \item{\code{"rsvd"}}. Uses 5 iterations of \code{\link[irlba]{svdr}} from
+#'     the \href{https://cran.r-project.org/package=irlba}{irlba} package.
+#'     This is likely to give much faster but potentially less accurate results
+#'     than using \code{"irlba"}. For the purposes of nearest neighbor
+#'     calculation and coordinates initialization, any loss of accuracy doesn't
+#'     seem to matter much.
+#'     \item{\code{"bigstatsr"}}. Uses \code{\link[bigstatsr]{big_randomSVD}}
+#'     from the \href{https://cran.r-project.org/package=bigstatsr}{bigstatsr}
+#'     package. The SVD methods used in \code{bigstatsr} may be faster on
+#'     systems without access to efficient linear algebra libraries (e.g.
+#'     Windows). \strong{Note}: \code{bigstatsr} is \emph{not} a dependency of
+#'     uwot: if you choose to use this package for PCA, you \emph{must} install
+#'     it yourself.
+#'     \item{\code{"svd"}}. Uses \code{\link[base]{svd}} for the SVD. This is
+#'     likely to be slow for all but the smallest datasets.
+#'     \item{\code{"auto"}} (the default). Uses \code{"irlba"}, unless more than
+#'     50% of the full set of singular vectors would be calculated, in which
+#'     case \code{"svd"} is used.
+#'   }
+#' @param pcg_rand If \code{TRUE}, use the PCG random number generator (O'Neill,
+#'   2014) during optimization. Otherwise, use the faster (but probably less
+#'   statistically good) Tausworthe "taus88" generator. The default is
+#'   \code{TRUE}.
+#' @param fast_sgd If \code{TRUE}, then the following combination of parameters
+#'   is set: \code{pcg_rand = TRUE}, \code{n_sgd_threads = "auto"} and
+#'   \code{approx_pow = TRUE}. The default is \code{FALSE}. Setting this to
+#'   \code{TRUE} will speed up the stochastic optimization phase, but give a
+#'   potentially less accurate embedding, and which will not be exactly
+#'   reproducible even with a fixed seed. For visualization, \code{fast_sgd =
+#'   TRUE} will give perfectly good results. For more generic dimensionality
+#'   reduction, it's safer to leave \code{fast_sgd = FALSE}. If \code{fast_sgd =
+#'   TRUE}, then user-supplied values of \code{pcg_rand}, \code{n_sgd_threads},
+#'   and \code{approx_pow} are ignored.
+#' @param batch If \code{TRUE}, then embedding coordinates are updated at the
+#'   end of each epoch rather than during the epoch. In batch mode, results are
+#'   reproducible with a fixed random seed even with \code{n_sgd_threads > 1},
+#'   at the cost of a slightly higher memory use. You may also have to modify
+#'   \code{learning_rate} and increase \code{n_epochs}, so whether this provides
+#'   a speed increase over the single-threaded optimization is likely to be
+#'   dataset and hardware-dependent.
+#' @param n_sgd_threads Number of threads to use during stochastic gradient
+#'   descent. If set to > 1, then be aware that if \code{batch = FALSE}, results
+#'   will \emph{not} be reproducible, even if \code{set.seed} is called with a
+#'   fixed seed before running. If set to \code{"auto"} then half the number of
+#'   concurrent threads supported by the system will be used.
+#' @param grain_size The minimum amount of work to do on each thread. If this
+#'   value is set high enough, then less than \code{n_threads} or
+#'   \code{n_sgd_threads} will be used for processing, which might give a
+#'   performance improvement if the overhead of thread management and context
+#'   switching was outweighing the improvement due to concurrent processing.
+#'   This should be left at default (\code{1}) and work will be spread evenly
+#'   over all the threads specified.
+#' @param verbose If \code{TRUE}, log details to the console.
+#' @param opt_args A list of optimizer parameters, used when
+#'   \code{batch = TRUE}. The default optimization method used is Adam (Kingma
+#'   and Ba, 2014).
+#'   \itemize{
+#'     \item \code{method} The optimization method to use. Either \code{"adam"}
+#'     or \code{"sgd"} (stochastic gradient descent). Default: \code{"adam"}.
+#'     \item \code{beta1} (Adam only). The weighting parameter for the
+#'     exponential moving average of the first moment estimator. Effectively the
+#'     momentum parameter. Should be a floating point value between 0 and 1.
+#'     Higher values can smooth oscillatory updates in poorly-conditioned
+#'     situations and may allow for a larger \code{learning_rate} to be
+#'     specified, but too high can cause divergence. Default: \code{0.5}.
+#'     \item \code{beta2} (Adam only). The weighting parameter for the
+#'     exponential moving average of the uncentered second moment estimator.
+#'     Should be a floating point value between 0 and 1. Controls the degree of
+#'     adaptivity in the step-size. Higher values put more weight on previous
+#'     time steps. Default: \code{0.9}.
+#'     \item \code{eps} (Adam only). Intended to be a small value to prevent
+#'     division by zero, but in practice can also affect convergence due to its
+#'     interaction with \code{beta2}. Higher values reduce the effect of the
+#'     step-size adaptivity and bring the behavior closer to stochastic gradient
+#'     descent with momentum. Typical values are between 1e-8 and 1e-3. Default:
+#'     \code{1e-7}.
+#'     \item \code{alpha} The initial learning rate. Default: the value of the
+#'     \code{learning_rate} parameter.
+#'   }
+#' @param epoch_callback A function which will be invoked at the end of every
+#'   epoch. Its signature should be: \code{(epoch, n_epochs, coords)}, where:
+#'   \itemize{
+#'     \item \code{epoch} The current epoch number (between \code{1} and
+#'     \code{n_epochs}).
+#'     \item \code{n_epochs} Number of epochs to use during the optimization of
+#'     the embedded coordinates.
+#'     \item \code{coords} The embedded coordinates as of the end of the current
+#'     epoch, as a matrix with dimensions (N, \code{n_components}).
+#'   }
+#' @param binary_edge_weights If \code{TRUE} then edge weights in the input
+#'   graph are treated as binary (0/1) rather than real valued.
+#' @return A matrix of optimized coordinates.
+#'
+#' @examples
+#'
+#' iris30 <- iris[c(1:10, 51:60, 101:110), ]
+#'
+#' # return a 30 x 30 sparse matrix with similarity data based on 10 nearest
+#' # neighbors per item
+#' iris30_sim_graph <- similarity_graph(iris30, n_neighbors = 10)
+#' # produce 2D coordinates replicating the neighbor relations in the similarity
+#' # graph
+#' set.seed(42)
+#' iris30_opt <- optimize_graph_layout(iris30_sim_graph, X = iris30)
+#'
+#' # the above two steps are the same as:
+#' # set.seed(42); iris_umap <- umap(iris30, n_neighbors = 10)
+#'
+#' @references
+#' Kingma, D. P., & Ba, J. (2014).
+#' Adam: A method for stochastic optimization.
+#' \emph{arXiv preprint} \emph{arXiv}:1412.6980.
+#' \url{https://arxiv.org/abs/1412.6980}
+#'
+#' McInnes, L., Healy, J., & Melville, J. (2018).
+#' UMAP: Uniform Manifold Approximation and Projection for Dimension Reduction
+#' \emph{arXiv preprint} \emph{arXiv}:1802.03426.
+#' \url{https://arxiv.org/abs/1802.03426}
+#'
+#' Tang, J., Liu, J., Zhang, M., & Mei, Q. (2016, April).
+#' Visualizing large-scale and high-dimensional data.
+#' In \emph{Proceedings of the 25th International Conference on World Wide Web}
+#' (pp. 287-297).
+#' International World Wide Web Conferences Steering Committee.
+#' \url{https://arxiv.org/abs/1602.00370}
+#'
+#' @export
+optimize_graph_layout <-
+  function(graph,
+           X = NULL,
+           n_components = 2,
+           n_epochs = NULL,
+           learning_rate = 1,
+           init = "spectral",
+           init_sdev = NULL,
+           spread = 1,
+           min_dist = 0.01,
+           repulsion_strength = 1.0,
+           negative_sample_rate = 5.0,
+           a = NULL,
+           b = NULL,
+           method = "umap",
+           approx_pow = FALSE,
+           pcg_rand = TRUE,
+           fast_sgd = FALSE,
+           n_sgd_threads = 0,
+           grain_size = 1,
+           verbose = getOption("verbose", TRUE),
+           batch = FALSE,
+           opt_args = NULL,
+           epoch_callback = NULL,
+           pca_method = NULL,
+           binary_edge_weights = FALSE) {
+    if (!is_sparse_matrix(graph)) {
+      stop("graph should be a sparse matrix")
+    }
+    if (nrow(graph) != ncol(graph)) {
+      stop("graph should be a square matrix")
+    }
+    if (!Matrix::isSymmetric(graph)) {
+      stop("graph should be symmetric")
+    }
+    if (!all(diff(graph@p) > 0)) {
+      stop("All items must have at least one neighbor similarity defined")
+    }
+
+    # Just do things the UMAP way or we will have a very slow largevis
+    # optimization
+    if (is.null(n_epochs)) {
+      n_vertices <- nrow(graph)
+      if (n_vertices <= 10000) {
+        n_epochs <- 500
+      }
+      else {
+        n_epochs <- 200
+      }
+    }
+
+    uwot(
+      X = X,
+      nn_method = graph,
+      is_similarity_graph = TRUE,
+      n_components = n_components,
+      n_epochs = n_epochs,
+      alpha = learning_rate,
+      init = init,
+      init_sdev = init_sdev,
+      spread = spread,
+      min_dist = min_dist,
+      gamma = repulsion_strength,
+      negative_sample_rate = negative_sample_rate,
+      a = a,
+      b = b,
+      method = method,
+      approx_pow = approx_pow,
+      pcg_rand = pcg_rand,
+      fast_sgd = fast_sgd,
+      n_sgd_threads = n_sgd_threads,
+      grain_size = grain_size,
+      verbose = verbose,
+      batch = batch,
+      opt_args = opt_args,
+      epoch_callback = epoch_callback,
+      pca_method = pca_method
+    )
+  }
+
+#' Merge Similarity Graph by Simplicial Set Union
+#'
+#' Combine two similarity graphs by treating them as fuzzy topological sets and
+#' forming the union.
+#'
+#' @param x A sparse matrix representing the first similarity graph in the union
+#'   operation.
+#' @param y A sparse matrix representing the second similarity graph in the
+#'   union operation.
+#' @param n_threads Number of threads to use when resetting the local metric.
+#'   Default is half the number of concurrent threads supported by the system.
+#' @param verbose If \code{TRUE}, log progress to the console.
+#' @returns A sparse matrix containing the union of \code{x} and \code{y}.
+#' @examples
+#'
+#' # Form two different "views" of the same data
+#' iris30 <- iris[c(1:10, 51:60, 101:110), ]
+#' iris_sg12 = similarity_graph(iris30[, 1:2], n_neighbors = 5)
+#' iris_sg34 = similarity_graph(iris30[, 3:4], n_neighbors = 5)
+#'
+#' # Combine the two representations into one
+#' iris_combined <- simplicial_set_union(iris_sg12, iris_sg34)
+#'
+#' # Optimize the layout based on the combined view
+#' iris_combined_umap <- optimize_graph_layout(iris_combined, n_epochs = 100)
+#' @export
+simplicial_set_union <-
+  function(x,
+           y,
+           n_threads = NULL,
+           verbose = FALSE) {
+    if (!is_sparse_matrix(x)) {
+      stop("similarity graph x must be a sparse matrix")
+    }
+    if (!is_sparse_matrix(y)) {
+      stop("similarity graph y must be a sparse matrix")
+    }
+    if (!all(dim(x) == dim(y))) {
+      stop("x and y must have identical dimensions")
+    }
+
+    z <- methods::as(x + y, "TsparseMatrix")
+
+    z@x <- general_sset_union_cpp(
+      x@p,
+      x@i,
+      x@x,
+      y@p,
+      y@i,
+      y@x,
+      z@i,
+      z@j,
+      z@x
+    )
+
+    z <- Matrix::drop0(z)
+    reset_local_connectivity(
+      z,
+      reset_local_metric = TRUE,
+      n_threads = n_threads,
+      verbose = verbose
+    )
+  }
+
+
+#' Merge Similarity Graph by Simplicial Set Intersection
+#'
+#' Combine two similarity graphs by treating them as fuzzy topological sets and
+#' forming the intersection.
+#'
+#' @param x A sparse matrix representing the first similarity graph in the
+#'   intersection operation.
+#' @param y A sparse matrix representing the second similarity graph in the
+#'   intersection operation.
+#' @param weight A value between \code{0 - 1}, controlling the relative
+#'   influence of \code{x} and \code{y} in the intersection. Default
+#'   (\code{0.5}) gives equal influence. Values smaller than \code{0.5} put more
+#'   weight on \code{x}. Values greater than \code{0.5} put more weight on
+#'   \code{y}.
+#' @param n_threads Number of threads to use when resetting the local metric.
+#'   Default is half the number of concurrent threads supported by the system.
+#' @param verbose If \code{TRUE}, log progress to the console.
+#' @returns A sparse matrix containing the intersection of \code{x} and
+#'   \code{y}.
+#' @examples
+#'
+#' # Form two different "views" of the same data
+#' iris30 <- iris[c(1:10, 51:60, 101:110), ]
+#' iris_sg12 = similarity_graph(iris30[, 1:2], n_neighbors = 5)
+#' iris_sg34 = similarity_graph(iris30[, 3:4], n_neighbors = 5)
+#'
+#' # Combine the two representations into one
+#' iris_combined <- simplicial_set_intersect(iris_sg12, iris_sg34)
+#'
+#' # Optimize the layout based on the combined view
+#' iris_combined_umap <- optimize_graph_layout(iris_combined, n_epochs = 100)
+#' @export
+simplicial_set_intersect <- function(x, y, weight = 0.5, n_threads = NULL,
+                                     verbose = FALSE) {
+  if (weight < 0 || weight > 1) {
+    stop("weight must be between 0-1")
+  }
+  if (!is_sparse_matrix(x)) {
+    stop("similarity graph x must be a sparse matrix")
+  }
+  if (!is_sparse_matrix(y)) {
+    stop("similarity graph y must be a sparse matrix")
+  }
+  if (!all(dim(x) == dim(y))) {
+    stop("x and y must have identical dimensions")
+  }
+  set_intersect(A = x, B = y, weight = weight, reset_connectivity = TRUE,
+                reset_local_metric = TRUE, n_threads = n_threads,
+                verbose = verbose)
+}
+
 # Function that does all the real work
 uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                  n_epochs = NULL,
@@ -1931,17 +2429,27 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                  verbose = getOption("verbose", TRUE),
                  epoch_callback = NULL,
                  binary_edge_weights = FALSE,
-                 dens_scale = NULL) {
+                 dens_scale = NULL,
+                 is_similarity_graph = FALSE,
+                 seed = NULL) {
   if (is.null(n_threads)) {
     n_threads <- default_num_threads()
   }
-  method <- match.arg(tolower(method), c("umap", "tumap", "largevis", "pacmap"))
+  method <- match.arg(tolower(method), c("umap", "tumap", "largevis"))
 
-  if (method == "umap" && (is.null(a) || is.null(b))) {
-    ab_res <- find_ab_params(spread = spread, min_dist = min_dist)
-    a <- ab_res[1]
-    b <- ab_res[2]
-    tsmessage("UMAP embedding parameters a = ", formatC(a), " b = ", formatC(b))
+  if (method == "umap") {
+    if (is.null(a) || is.null(b)) {
+      ab_res <- find_ab_params(spread = spread, min_dist = min_dist)
+      a <- ab_res[1]
+      b <- ab_res[2]
+      tsmessage("UMAP embedding parameters a = ", formatC(a), " b = ", formatC(b))
+    }
+    else {
+      # set min_dist and spread to NULL so if ret_model = TRUE, their default
+      # values are not mistaken for having been used for anything
+      min_dist <- NULL
+      spread <- NULL
+    }
   }
 
   if (n_neighbors < 2) {
@@ -1971,7 +2479,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     if (pca < n_components) {
       stop("'pca' must be >= n_components")
     }
-    if (pca > min(nrow(X), ncol(X))) {
+    if (pca > min(nrow(X), na.rm = col(X))) {
       stop("'pca' must be <= min(nrow(X), ncol(X))")
     }
   }
@@ -2005,6 +2513,16 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     n_sgd_threads <- round(n_sgd_threads)
     tsmessage("Non-integer 'n_sgd_threads' provided. Setting to ", n_sgd_threads)
   }
+  if (!is.null(dens_scale) && approx_pow) {
+    warning("approx_pow parameter is ignored when using dens_scale")
+    approx_pow <- FALSE
+  }
+  # 110: for more consistent reproducibility set a user-supplied seed
+  if (!is.null(seed)) {
+    tsmessage("Setting random seed ", seed)
+    set.seed(seed)
+  }
+
 
   ret_extra <- ret_model || ret_nn || ret_fgraph || ret_sigma || ret_localr
 
@@ -2078,6 +2596,16 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
          X <- X[, indexes]
         }
         X <- as.matrix(X)
+      }
+      if (n_components > ncol(X)) {
+        warning(
+          "n_components ",
+          "> number of columns in input data: ",
+          n_components,
+          " > ",
+          ncol(X),
+          ", this may give poor or unexpected results"
+        )
       }
     }
     else {
@@ -2161,19 +2689,32 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     pca_shortcut <- TRUE
   }
 
-  need_sigma <- ret_sigma || ret_localr || !is.null(dens_scale)
-  d2sr <- data2set(X, Xcat, n_neighbors, metrics, nn_method,
-    n_trees, search_k,
-    method,
-    set_op_mix_ratio, local_connectivity, bandwidth,
-    perplexity, kernel, need_sigma,
-    n_threads, grain_size,
-    ret_model,
-    pca = pca, pca_center = pca_center, pca_method = pca_method,
-    n_vertices = n_vertices,
-    tmpdir = tmpdir,
-    verbose = verbose
-  )
+  if (is_similarity_graph) {
+    d2sr <-
+      list(
+        V = nn_method,
+        nns = NULL,
+        pca_models = NULL,
+        sigma = NULL,
+        rho = NULL
+      )
+    need_sigma <- FALSE
+  }
+  else {
+    need_sigma <- ret_sigma || ret_localr || !is.null(dens_scale)
+    d2sr <- data2set(X, Xcat, n_neighbors, metrics, nn_method,
+      n_trees, search_k,
+      method,
+      set_op_mix_ratio, local_connectivity, bandwidth,
+      perplexity, kernel, need_sigma,
+      n_threads, grain_size,
+      ret_model,
+      pca = pca, pca_center = pca_center, pca_method = pca_method,
+      n_vertices = n_vertices,
+      tmpdir = tmpdir,
+      verbose = verbose
+    )
+  }
   V <- d2sr$V
   nns <- d2sr$nns
   if (is.null(pca_models)) {
@@ -2184,9 +2725,11 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
   sigma <- NULL
   rho <- NULL
   localr <- NULL
+  dint <- NULL
   if (need_sigma) {
     sigma <- d2sr$sigma
     rho <- d2sr$rho
+    dint <- d2sr$dint
   }
   if (!is.null(dens_scale) || ret_localr) {
     localr <- sigma + rho
@@ -2239,7 +2782,6 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       y <- NULL
     }
 
-
     if (!is.null(y)) {
       yd2sr <- data2set(y, ycat, target_n_neighbors, target_metrics, nn_method,
         n_trees, search_k,
@@ -2261,7 +2803,9 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
         "Intersecting X and Y sets with target weight = ",
         formatC(target_weight)
       )
-      V <- set_intersect(V, yd2sr$V, target_weight, reset = TRUE)
+      # behavior for supervised UMAP: do reset local connectivity
+      # don't reset metric (same as Python UMAP as of 0.5.3)
+      V <- set_intersect(V, yd2sr$V, target_weight, reset_connectivity = TRUE)
       yd2sr$V <- NULL
       yd2sr$nns <- NULL
     }
@@ -2376,8 +2920,18 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       if (is.null(init_sdev)) {
         init_sdev <- 1e-4
       }
-      embedding <- scale_coords(embedding, init_sdev, verbose = verbose)
+      if (is.numeric(init_sdev)) {
+        embedding <- scale_coords(embedding, init_sdev, verbose = verbose)
+      }
+      else if (is.character(init_sdev) && init_sdev == "range") {
+        # #99: range scale coordinates like python UMAP does
+        tsmessage("Range-scaling initial input columns to 0-10")
+        embedding <- apply(embedding, 2, range_scale, max = 10.0)
+      }
     }
+  }
+  if (any(is.na(embedding))) {
+    stop("Initial data contains NA values: is n_components too high?")
   }
 
   if (is.null(n_epochs) || n_epochs < 0) {
@@ -2401,8 +2955,15 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
   }
 
   if (n_epochs > 0) {
+    if (any(apply(embedding, 2, stats::sd) > 10.0)) {
+      warning("Initial embedding standard deviation > 10.0, this can lead to ",
+              "poor optimization")
+    }
+
+    # remove edges which can't be sampled due to n_epochs
     V@x[V@x < max(V@x) / n_epochs] <- 0
     V <- Matrix::drop0(V)
+
     # Create the (0-indexed) indices of the head and tail of each directed edge
     # in V. Graph is symmetric, so both (i->j) and (j->i) are present
     if (batch) {
@@ -2440,6 +3001,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
         rad_coeff <- stats::lm(lai2 ~ llr)$coefficients
       }
     }
+
     method <- tolower(method)
     method_args <- switch(method,
       umap = list(a = a, b = b, gamma = gamma, approx_pow = approx_pow),
@@ -2509,7 +3071,12 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
         pcg_rand = pcg_rand,
         batch = batch,
         opt_args = full_opt_args,
-        num_precomputed_nns = num_precomputed_nns
+        num_precomputed_nns = num_precomputed_nns,
+        # #95: min_dist and spread are exported for documentation purposes only
+        min_dist = min_dist,
+        spread = spread,
+        binary_edge_weights = binary_edge_weights,
+        seed = seed
       ))
       if (nn_is_precomputed(nn_method)) {
         res$n_neighbors <- nn_graph_nbrs_list(nn_method)
@@ -2591,6 +3158,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     if (ret_sigma) {
       res$sigma <- sigma
       res$rho <- rho
+      res$dint <- dint
     }
     if (ret_localr && !is.null(localr)) {
       res$localr <- localr
@@ -2711,7 +3279,16 @@ save_uwot <- function(model, file, unload = FALSE, verbose = FALSE) {
       setwd(mod_dir)
       tmp_model_file <- abspath(file)
       tsmessage("Creating ", tmp_model_file)
-      utils::tar(tarfile = tmp_model_file, files = "uwot/")
+
+      # #109: Windows 7 tar needs "--force-local" to avoid interpreting colon
+      # as indicating a remote machine
+      extra_flags <- ""
+      if (is_win7()) {
+        extra_flags <- "--force-local"
+      }
+      utils::tar(tarfile = tmp_model_file,
+                 extra_flags = extra_flags,
+                 files = "uwot/")
     },
     finally = {
       setwd(wd)
@@ -2784,7 +3361,16 @@ load_uwot <- function(file, verbose = FALSE) {
   tsmessage("Creating temp directory ", mod_dir)
   dir.create(mod_dir)
 
-  utils::untar(abspath(file), exdir = mod_dir, verbose = verbose)
+  # #109: Windows 7 tar needs "--force-local" to avoid interpreting colon
+  # as indicating a remote machine
+  extras <- NULL
+  if (is_win7()) {
+    extras <- "--force-local"
+  }
+  utils::untar(abspath(file),
+               exdir = mod_dir,
+               extras = extras,
+               verbose = verbose)
 
   model_fname <- file.path(mod_dir, "uwot/model")
   if (!file.exists(model_fname)) {
@@ -3147,13 +3733,16 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
       V <- Vblock
     }
     else {
-      V <- set_intersect(V, Vblock, weight = 0.5, reset = TRUE)
+      # TODO: should at least offer the option to reset the local metric here
+      # TODO: make this the default (breaking change)
+      V <- set_intersect(V, Vblock, weight = 0.5, reset_connectivity = TRUE)
     }
     if (ret_sigma && is.null(sigma)) {
       # No idea how to combine different neighborhood sizes so just return the
       # first set
       sigma <- x2set_res$sigma
       rho <- x2set_res$rho
+      dint <- x2set_res$dint
     }
   }
 
@@ -3165,6 +3754,7 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
   if (!is.null(sigma)) {
     res$sigma <- sigma
     res$rho <- rho
+    res$dint <- dint
   }
   res
 }
@@ -3251,6 +3841,7 @@ nn2set <- function(method, nn,
     res$V <- Vres$matrix
     if (ret_sigma && !is.null(Vres$sigma)) {
       res$sigma <- Vres$sigma
+      res$dint <- Vres$dint
     }
   }
   else {
@@ -3264,7 +3855,6 @@ nn2set <- function(method, nn,
       grain_size = grain_size,
       verbose = verbose
     )
-
     if (ret_sigma) {
       res$V <- Vres$matrix
       res$sigma <- Vres$sigma
@@ -3335,19 +3925,23 @@ x2set <- function(X, n_neighbors, metric, nn_method,
   if (ret_sigma && !is.null(nn2set_res$sigma)) {
     res$sigma <- nn2set_res$sigma
     res$rho <- nn2set_res$rho
+    res$dint <- nn2set_res$dint
   }
   res
 }
 
-set_intersect <- function(A, B, weight = 0.5, reset = TRUE) {
+set_intersect <- function(A, B, weight = 0.5, reset_connectivity = TRUE,
+                          reset_local_metric = FALSE, n_threads = NULL,
+                          verbose = FALSE) {
   A <- general_simplicial_set_intersection(
     A, B, weight
   )
   A <- Matrix::drop0(A)
   # https://github.com/lmcinnes/umap/issues/58#issuecomment-437633658
   # For now always reset
-  if (reset) {
-    A <- reset_local_connectivity(A)
+  if (reset_connectivity) {
+    A <- reset_local_connectivity(A, reset_local_metric = reset_local_metric,
+                                  n_threads = n_threads, verbose = verbose)
   }
   A
 }

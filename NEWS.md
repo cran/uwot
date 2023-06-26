@@ -1,4 +1,93 @@
-# uwot 0.1.13.9000
+# uwot 0.1.15
+
+## New features:
+
+* New function: `optimize_graph_layout`. Use this to produce optimized output 
+coordinates that reflect an input similarity graph (such as that produced by
+the `similarity_graph` function. `similarity_graph` followed by 
+`optimize_graph_layout` is the same as running `umap`, so the purpose of these
+functions is to allow for more flexibility and decoupling between generating
+the nearest neighbor graph and optimizing the low-dimensional approximation
+to it. Based on a request by user [Chengwei94](https://github.com/Chengwei94) 
+(<https://github.com/jlmelville/uwot/issues/98>).
+* New functions: `simplicial_set_union` and `simplicial_set_intersect`. These
+allow for the combination of different fuzzy graph representations of a dataset
+into a single fuzzy graph using the UMAP simplicial set operations. Based on a
+request in the Python UMAP issues tracker by user 
+[Dhar xion](https://github.com/ratheraarif).
+* New parameter for `umap_transform`: `ret_extra`. This works like the
+equivalent parameter for `umap`, and should be a character vector specifying the
+extra information you would like returned in addition to the embedding, in which
+case a list will be returned with an `embedding` member containing the optimized
+coordinates. Supported values are `"fgraph"`, `"nn"`, `"sigma"` and `"localr"`.
+Based on a request by user 
+[PedroMilanezAlmeida](https://github.com/PedroMilanezAlmeida) 
+(<https://github.com/jlmelville/uwot/issues/104>).
+* New parameter from `umap`, `tumap` and `umap_transform`: `seed`. This will do
+the equivalent of calling `set.seed` internally, and hence will help with 
+reproducibility. The chosen seed is exported if `ret_model = TRUE` and 
+`umap_transform` will use that seed if present, so you only need to specify
+it in `umap_transform` if you want to change the seed. The default behavior 
+remains to not modify the random number state. Based on a request by
+[SuhasSrinivasan](https://github.com/SuhasSrinivasan)
+(<https://github.com/jlmelville/uwot/issues/110>).
+
+## Bug fixes and minor improvements
+
+* A new setting for `init_sdev`: set `init_sdev = "range"` and initial
+coordinates will be range-scaled so each column takes values between 0-10. This
+pre-processing was added to the Python UMAP package at some point after `uwot`
+began development and so should probably always be used with the default 
+`init = "spectral"` setting. However, it is not set by default to maintain
+backwards compatibility with older versions of `uwot`.
+* `ret_extra = c("sigma")` is now supported by `lvish`. The Gaussian bandwidths
+are returned in a `sigma` vector. In addition, a vector of intrinsic
+dimensionalities estimated for each point using an analytical expression of the
+finite difference method given by 
+[Lee and co-workers](https://doi.org/10.1016/j.neucom.2014.12.095) is returned 
+in the `dint` vector.
+* The `min_dist` and `spread` parameters are now returned in the model when
+`umap` is run with `ret_model = TRUE`. This is just for documentation purposes, 
+these values are not used directly by the model in `umap_transform`. If the 
+parameters `a` and `b` are set directly when invoking `umap`, then both 
+`min_dist` and `spread` will be set to `NULL` in the returned model. This 
+feature was added in response to a question from 
+[kjiang18](https://github.com/kjiang18) 
+(<https://github.com/jlmelville/uwot/issues/95>).
+* Some new checks for NA values in input data have been added. Also a warning
+will be emitted if `n_components` seems to have been set too high.
+* If `n_components` was greater than `n_neighbors` then `umap_transform` would
+crash the R session. Thank you to [ChVav](https://github.com/ChVav) for 
+reporting this (<https://github.com/jlmelville/uwot/issues/102>).
+* Using `umap_transform` with a model where `dens_scale` was set could cause
+a segmentation fault, destroying the session. Even if it didn't it could give
+an entirely artifactual "ring" structure. Thank you 
+[FemkeSmit](https://github.com/FemkeSmit) for reporting this and providing
+assistance in diagnosing the underlying cause 
+(<https://github.com/jlmelville/uwot/issues/103>).
+* If you set `binary_edge_weights = TRUE`, this setting was not exported when
+`ret_model = TRUE`, and was therefore not respected by `umap_transform`. This 
+has now been fixed, but you will need to regenerate any models that used
+binary edge weights.
+* The rdoc for the `init` param said that if there were multiple disconnected
+components, a spectral initialization would attempt to merge multiple 
+sub-graphs. Not true: actually, spectral initialization is abandoned in favor
+of PCA. The documentation has been updated to reflect the true state of affairs.
+No idea what I was thinking of there.
+* `load_model` and `save_model` didn't work on Windows 7 due to how the version
+of `tar` there handles drive letters. Thank you
+[mytarmail](https://github.com/mytarmail) for the report 
+(<https://github.com/jlmelville/uwot/issues/109>).
+* Warn if the initial coordinates have a very large scale (a standard deviation 
+> 10.0), because this can lead to small gradients and poor optimization. Thank
+you [SuhasSrinivasan](https://github.com/SuhasSrinivasan) for the report
+(<https://github.com/jlmelville/uwot/issues/110>).
+* A change to accommodate a forthcoming version of 
+[RcppAnnoy](https://cran.r-project.org/package=RcppAnnoy). Thank
+you [Dirk Eddelbuettel](https://github.com/eddelbuettel) for the PR
+(<https://github.com/jlmelville/uwot/issues/111>).
+
+# uwot 0.1.14
 
 ## New features
 
@@ -18,10 +107,9 @@ setting `method = "largevis"`.
 
 * If a model was generated without using pre-generated nearest neighbors, you
 couldn't use `umap_transform` with pre-generated nearest neighbors (also the
-error message was completely useless).Thank you to 
+error message was completely useless). Thank you to 
 [AustinHartman](https://github.com/AustinHartman) for reporting this 
 (<https://github.com/jlmelville/uwot/issues/97>).
-
 
 # uwot 0.1.13
 

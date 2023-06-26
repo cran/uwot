@@ -48,7 +48,8 @@ umap(
   epoch_callback = NULL,
   pca_method = NULL,
   binary_edge_weights = FALSE,
-  dens_scale = NULL
+  dens_scale = NULL,
+  seed = NULL
 )
 }
 \arguments{
@@ -165,13 +166,13 @@ For UMAP, the default is \code{"none"}.}
    \item A matrix of initial coordinates.
  }
 For spectral initializations, (\code{"spectral"}, \code{"normlaplacian"},
-\code{"laplacian"}), if more than one connected component is identified,
-each connected component is initialized separately and the results are
-merged. If \code{verbose = TRUE} the number of connected components are
-logged to the console. The existence of multiple connected components
-implies that a global view of the data cannot be attained with this
-initialization. Either a PCA-based initialization or increasing the value of
-\code{n_neighbors} may be more appropriate.}
+\code{"laplacian"}, \code{"agspectral"}), if more than one connected
+component is identified, no spectral initialization is attempted. Instead
+a PCA-based initialization is attempted. If \code{verbose = TRUE} the
+number of connected components are logged to the console. The existence of
+multiple connected components implies that a global view of the data cannot
+be attained with this initialization. Increasing the value of
+\code{n_neighbors} may help.}
 
 \item{init_sdev}{If non-\code{NULL}, scales each dimension of the initialized
 coordinates (including any user-supplied matrix) to this standard
@@ -185,7 +186,12 @@ circumstances. Scaling the result of \code{init = "pca"} is usually
 recommended and \code{init = "spca"} as an alias for \code{init = "pca",
 init_sdev = 1e-4} but for the spectral initializations the scaled versions
 usually aren't necessary unless you are using a large value of
-\code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher).}
+\code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher). For
+compatibility with recent versions of the Python UMAP package, if you are
+using \code{init = "spectral"}, then you should also set
+\code{init_sdev = "range"}, which will range scale each of the columns
+containing the initial data between 0-10. This is not set by default to
+maintain backwards compatibility with previous versions of uwot.}
 
 \item{spread}{The effective scale of embedded points. In combination with
 \code{min_dist}, this determines how clustered/clumped the embedded points
@@ -274,7 +280,8 @@ search. Only used if the \code{nn_method} is \code{"annoy"}.}
 
 \item{approx_pow}{If \code{TRUE}, use an approximation to the power function
 in the UMAP gradient, from
-\url{https://martin.ankerl.com/2012/01/25/optimized-approximative-pow-in-c-and-cpp/}.}
+\url{https://martin.ankerl.com/2012/01/25/optimized-approximative-pow-in-c-and-cpp/}.
+Ignored if \code{dens_scale} is non-\code{NULL}.}
 
 \item{y}{Optional target data for supervised dimension reduction. Can be a
 vector, matrix or data frame. Use the \code{target_metric} parameter to
@@ -359,7 +366,15 @@ settings are incompatible with the production of a UMAP model: external
 neighbor data (passed via a list to \code{nn_method}), and factor columns
 that were included via the \code{metric} parameter. In the latter case, the
 model produced is based only on the numeric data. A transformation using
-new data is possible, but the factor columns in the new data are ignored.}
+new data is possible, but the factor columns in the new data are ignored.
+Note that setting \code{ret_model = TRUE} forces the use of the approximate
+nearest neighbors method. Because small datasets would otherwise use exact
+nearest neighbor calculations, setting \code{ret_model = TRUE} means that
+different results may be returned for small datasets in terms of both the
+returned nearest neighbors (if requested) and the final embedded
+coordinates, compared to \code{ret_model = FALSE}, even if the random
+number seed is fixed. To avoid this, explicitly set
+\code{nn_method = "annoy"} in the \code{ret_model = FALSE} case.}
 
 \item{ret_nn}{If \code{TRUE}, then in addition to the embedding, also return
 nearest neighbor data that can be used as input to \code{nn_method} to
@@ -510,6 +525,15 @@ approximation to the densMAP method (Narayan and co-workers, 2021). The
 larger the value of \code{dens_scale}, the greater the range of output
 densities that will be used to map the input densities. This option is
 ignored if using multiple \code{metric} blocks.}
+
+\item{seed}{Integer seed to use to initialize the random number generator
+state. Combined with \code{n_sgd_threads = 1} or \code{batch = TRUE}, this
+should give consistent output across multiple runs on a given installation.
+Setting this value is equivalent to calling \code{\link[base]{set.seed}},
+but it may be more convenient in some situations than having to call a
+separate function. The default is to not set a seed. If
+\code{ret_model = TRUE}, the seed will be stored in the output model and
+then used to set the seed inside \code{\link{umap_transform}}.}
 }
 \value{
 A matrix of optimized coordinates, or:

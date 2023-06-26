@@ -156,13 +156,13 @@ For lvish, the default is \code{"maxabs"}, for consistency with LargeVis.}
    \item A matrix of initial coordinates.
  }
 For spectral initializations, (\code{"spectral"}, \code{"normlaplacian"},
-\code{"laplacian"}), if more than one connected component is identified,
-each connected component is initialized separately and the results are
-merged. If \code{verbose = TRUE} the number of connected components are
-logged to the console. The existence of multiple connected components
-implies that a global view of the data cannot be attained with this
-initialization. Either a PCA-based initialization or increasing the value of
-\code{n_neighbors} may be more appropriate.}
+\code{"laplacian"}, \code{"agspectral"}), if more than one connected
+component is identified, no spectral initialization is attempted. Instead
+a PCA-based initialization is attempted. If \code{verbose = TRUE} the
+number of connected components are logged to the console. The existence of
+multiple connected components implies that a global view of the data cannot
+be attained with this initialization. Increasing the value of
+\code{n_neighbors} may help.}
 
 \item{init_sdev}{If non-\code{NULL}, scales each dimension of the initialized
 coordinates (including any user-supplied matrix) to this standard
@@ -176,7 +176,12 @@ circumstances. Scaling the result of \code{init = "pca"} is usually
 recommended and \code{init = "spca"} as an alias for \code{init = "pca",
 init_sdev = 1e-4} but for the spectral initializations the scaled versions
 usually aren't necessary unless you are using a large value of
-\code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher).}
+\code{n_neighbors} (e.g. \code{n_neighbors = 150} or higher). For
+compatibility with recent versions of the Python UMAP package, if you are
+using \code{init = "spectral"}, then you should also set
+\code{init_sdev = "range"}, which will range scale each of the columns
+containing the initial data between 0-10. This is not set by default to
+maintain backwards compatibility with previous versions of uwot.}
 
 \item{repulsion_strength}{Weighting applied to negative samples in low
 dimensional embedding optimization. Values higher than one will result in
@@ -407,6 +412,10 @@ A matrix of optimized coordinates, or:
     \item if \code{ret_extra} contains \code{"P"}, returns the high
     dimensional probability matrix as a sparse matrix called \code{P}, of
     type \link[Matrix]{dgCMatrix-class}.
+    \item if \code{ret_extra} contains \code{"sigma"}, returns a vector of
+    the high dimensional gaussian bandwidths for each point, and
+    \code{"dint"} a vector of estimates of the intrinsic dimensionality at
+    each point, based on the method given by Lee and co-workers (2015).
   }
   The returned list contains the combined data from any combination of
   specifying \code{ret_nn} and \code{ret_extra}.
@@ -453,4 +462,9 @@ In \emph{Proceedings of the 25th International Conference on World Wide Web}
 (pp. 287-297).
 International World Wide Web Conferences Steering Committee.
 \url{https://arxiv.org/abs/1602.00370}
+
+Lee, J. A., Peluffo-Ordóñez, D. H., & Verleysen, M. (2015).
+Multi-scale similarities in stochastic neighbour embedding: Reducing
+dimensionality while preserving both local and global structure.
+\emph{Neurocomputing}, \emph{169}, 246-261.
 }

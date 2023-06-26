@@ -20,7 +20,9 @@ umap_transform(
   batch = NULL,
   learning_rate = NULL,
   opt_args = NULL,
-  epoch_callback = NULL
+  epoch_callback = NULL,
+  ret_extra = NULL,
+  seed = NULL
 )
 }
 \arguments{
@@ -167,10 +169,59 @@ epoch. Its signature should be:
   (Nmodel, \code{n_components}) where \code{Nmodel} is the number of
   observations in the original data.
 }}
+
+\item{ret_extra}{A vector indicating what extra data to return. May contain
+any combination of the following strings:
+\itemize{
+  \item \code{"fgraph"} the high dimensional fuzzy graph (i.e. the fuzzy
+    simplicial set of the merged local views of the input data). The graph
+    is returned as a sparse matrix of class \link[Matrix]{dgCMatrix-class}
+    with dimensions \code{NX} x \code{Nmodel}, where \code{NX} is the number
+    of items in the data to transform in \code{X}, and \code{NModel} is
+    the number of items in the data used to build the UMAP \code{model}.
+    A non-zero entry (i, j) gives the membership strength of the edge
+    connecting the vertex representing the ith item in \code{X} to the
+    jth item in the data used to build the \code{model}. Note that the
+    graph is further sparsified by removing edges with sufficiently low
+    membership strength that they would not be sampled by the probabilistic
+    edge sampling employed for optimization and therefore the number of
+    non-zero elements in the matrix is dependent on \code{n_epochs}. If you
+    are only interested in the fuzzy input graph (e.g. for clustering),
+    setting \code{n_epochs = 0} will avoid any further sparsifying.
+}}
+
+\item{seed}{Integer seed to use to initialize the random number generator
+state. Combined with \code{n_sgd_threads = 1} or \code{batch = TRUE}, this
+should give consistent output across multiple runs on a given installation.
+Setting this value is equivalent to calling \code{\link[base]{set.seed}},
+but it may be more convenient in some situations than having to call a
+separate function. The default is to not set a seed, in which case this
+function uses the behavior specified by the supplied \code{model}: If the
+model specifies a seed, then the model seed will be used to seed then
+random number generator, and results will still be consistent (if
+\code{n_sgd_threads = 1}). If you want to force the seed to not be set,
+even if it is set in \code{model}, set \code{seed = FALSE}.}
 }
 \value{
 A matrix of coordinates for \code{X} transformed into the space
-  of the \code{model}.
+  of the \code{model}, or if \code{ret_extra} is specified, a list
+  containing:
+  \itemize{
+    \item \code{embedding} the matrix of optimized coordinates.
+    \item if \code{ret_extra} contains \code{"fgraph"}, an item of the same
+    name containing the high-dimensional fuzzy graph as a sparse matrix, of
+    type \link[Matrix]{dgCMatrix-class}.
+    \item if \code{ret_extra} contains \code{"sigma"}, returns a vector of
+    the smooth knn distance normalization terms for each observation as
+    \code{"sigma"} and a vector \code{"rho"} containing the largest
+    distance to the locally connected neighbors of each observation.
+    \item if \code{ret_extra} contains \code{"localr"}, an item of the same
+    name containing a vector of the estimated local radii, the sum of
+    \code{"sigma"} and \code{"rho"}.
+    \item if \code{ret_extra} contains \code{"nn"}, an item of the same name
+    containing the nearest neighbors of each item in \code{X} (with respect
+    to the items that created the \code{model}).
+  }
 }
 \description{
 Carry out an embedding of new data using an existing embedding. Requires
