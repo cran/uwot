@@ -1,6 +1,6 @@
-048454582588286c079887b9509bf95a *DESCRIPTION
+a60fac3dcd00acc9ad21ff04dd4fa3a2 *DESCRIPTION
 c8a9a1dc5b608030096a7d72fd4c7572 *NAMESPACE
-19fb463b7a5344853a43d01fc9e9f993 *NEWS.md
+b4b1a6e8bd03daf64fa5249b2ec0dc8c *NEWS.md
 5c93ee0161650a1f13669ed22b6feb83 *R/RcppExports.R
 2a871403d68d5a5535530e4cd459d500 *R/affinity.R
 b1486dbe304023c715057f3fddf5b132 *R/bigstatsr_init.R
@@ -40,7 +40,7 @@ c8eb67d386906fa43ae3adb792cccd5a *man/unload_uwot.Rd
 6c5903b7e960c504315d57f2070a2abe *src/RcppExports.cpp
 8b804bf880076d43811bb6374d8ccaea *src/connected_components.cpp
 2413f7fc7b48e7988c2d8164f57357dd *src/nn_parallel.cpp
-4a00455a14027b68a610923b449ef445 *src/nn_parallel.h
+de3b4bbdf50efa556feb60bbe61225c3 *src/nn_parallel.h
 910d3403f766531a656ae6e0b974aacb *src/perplexity.cpp
 1c3b27ab69ceb359e04169e12d96a0bd *src/r_uwot.cpp
 5d64e7e9dfd431c376abc97176fb6062 *src/rng.h

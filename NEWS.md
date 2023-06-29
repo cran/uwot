@@ -1,3 +1,12 @@
+# uwot 0.1.16
+
+## Bug fixes and minor improvements
+
+* A small change to a header file was required to fully support the next version
+of [RcppAnnoy](https://cran.r-project.org/package=RcppAnnoy). Thank
+you [Dirk Eddelbuettel](https://github.com/eddelbuettel) for the PR
+(<https://github.com/jlmelville/uwot/issues/112>).
+
 # uwot 0.1.15
 
 ## New features:
