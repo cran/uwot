@@ -1,3 +1,57 @@
+# uwot 0.2.0
+
+## New features:
+
+* The [HNSW](https://github.com/nmslib/hnswlib) approximate nearest neighbor
+search algorithm is now supported via the
+[RcppHNSW](https://cran.r-project.org/package=RcppHNSW) package. Set
+`nn_method = "hnsw"` to use it. The behavior of the method can be controlled by
+the new `nn_args` parameter, a list which may contain `M`, `ef_construction`
+and `ef`. See the hnswlib library's 
+[ALGO_PARAMS documentation](https://github.com/nmslib/hnswlib/blob/master/ALGO_PARAMS.md)
+for details on these parameters. Although typically faster than Annoy (for a
+given accuracy), be aware that the only supported `metric` values are
+`"euclidean"`, `"cosine"` and `"correlation"`. Finally, RcppHNSW is only a
+suggested package, not a requirement, so you need to install it yourself (e.g.
+via `install.packages("RcppHNSW")`). Also see the
+[article on HNSW in uwot](https://jlmelville.github.io/uwot/articles/hnsw-umap.html)
+in the documentation.
+* The nearest neighbor descent approximate nearest neighbor search algorithm is
+now supported via the
+[rnndescent](https://cran.r-project.org/package=rnndescent) package. Set
+`nn_method = "nndescent"` to use it. The behavior of the method can be
+controlled by the new `nn_args` parameter. There are many supported metrics and
+possible parameters that can be set in `nn_args`, so please see the 
+[article on nearest neighbor descent in uwot](https://jlmelville.github.io/uwot/articles/rnndescent-umap.html)
+in the documentation, and also the rnndescent package's
+[documentation](https://jlmelville.github.io/rnndescent/index.html) for details.
+`rnndescent` is only a suggested package, not a requirement, so you need to 
+install it yourself (e.g. via `install.packages("rnndescent")`).
+* New function: `umap2`, which acts like `umap` but with modified defaults,
+reflecting my experience with UMAP and correcting some small mistakes. See the
+[umap2 article](https://jlmelville.github.io/uwot/articles/umap2.html) for more
+details.
+
+## Bug fixes and minor improvements
+
+* `init_sdev = "range"` caused an error with a user-supplied `init` matrix.
+* Transforming new data with the `correlation` metric was actually using the
+`cosine` metric if you saved and reloaded the model. Thank you 
+[Holly Hall](https://github.com/mdrnao) for the report and helpful detective
+work (<https://github.com/jlmelville/uwot/issues/117>).
+* `umap_transform` could fail if the new data to be transformed had the 
+`scaled:center` and `scaled:scale` attributes set (e.g. from applying the
+`scale` function).
+* If you asked `umap_transform` to return the fuzzy graph (
+`ret_extra = c("fgraph")`), it was transposed when `batch = TRUE, n_epochs = 0`.
+Thank you [PedroMilanezAlmeida](https://github.com/PedroMilanezAlmeida) for 
+reporting (<https://github.com/jlmelville/uwot/issues/118>).
+* Setting `n_sgd_threads = "auto"` with `umap_transform` caused a crash.
+* A warning was being emitted due to not being specific enough about what `dist`
+class was meant that may have been particularly affecting Seurat users. Thank 
+you [AndiMunteanu](https://github.com/AndiMunteanu) for reporting (and
+suggesting a solution) (<https://github.com/jlmelville/uwot/issues/121>).
+
 # uwot 0.1.16
 
 ## Bug fixes and minor improvements
@@ -138,7 +192,7 @@ coordinates. This is an approximation to the
 `dens_weight` will use a larger range of output densities to reflect the input
 data. If the data is too spread out, reduce the value of `dens_weight`. For
 more information see the 
-[documentation at the uwot repo](https://jlmelville.github.io/uwot/leopold.html).
+[documentation at the uwot repo](https://jlmelville.github.io/uwot/articles/leopold.html).
 * New parameter: `binary_edge_weights`. If set to `TRUE`, instead of smoothed
 knn distances, non-zero edge weights all have a value of 1. This is how
 [PaCMAP](https://www.jmlr.org/papers/v22/20-1061.html) works and there is

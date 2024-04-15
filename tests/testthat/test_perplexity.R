@@ -2,7 +2,7 @@ library(uwot)
 context("perplexity")
 
 # Full neighbor values based on comparison with smallvis results
-iris10_nn10 <- dist_nn(dist(iris10), k = 10)
+iris10_nn10 <- dist_nn(stats::dist(iris10), k = 10)
 
 P_symm <- matrix(c(
   0.000000e+00, 0.0022956859, 0.0022079944, 0.0004763074, 4.338953e-02, 1.822079e-02, 0.002913239, 0.0413498285, 5.184416e-05, 0.004134502,
@@ -80,7 +80,7 @@ res <- perplexity_similarities(
 expect_true(Matrix::isSymmetric(res))
 expect_equal(as.matrix(res), P_symm_6nn, tol = 1e-5, check.attributes = FALSE)
 
-# x2aff(dist(iris10), perplexity = 4)
+# x2aff(stats::dist(iris10), perplexity = 4)
 P_row <- matrix(c(
   0.000000e+00, 0.03254778, 0.04322171, 0.009522236, 4.179712e-01, 1.389888e-02, 0.03932256, 0.3802648571, 1.633620e-04, 0.06308741,
   1.336594e-02, 0.00000000, 0.21654628, 0.163906282, 4.387114e-03, 4.819686e-08, 0.02029701, 0.0618376045, 2.029701e-02, 0.49936271,
@@ -95,11 +95,14 @@ P_row <- matrix(c(
 ), nrow = 10, byrow = TRUE)
 
 # taken from smallvis
-expected_sigmas <- c(0.3252233, 0.2679755, 0.1817380, 0.1751287, 0.3280264,
-                     0.4861266, 0.2463306, 0.2422687, 0.3463065, 0.2411619)
+expected_sigmas <- c(
+  0.3252233, 0.2679755, 0.1817380, 0.1751287, 0.3280264,
+  0.4861266, 0.2463306, 0.2422687, 0.3463065, 0.2411619
+)
 
 iris10nn10d <- as.vector(t(iris10_nn10$dist))
-resp <- calc_row_probabilities_parallel(iris10nn10d, n_vertices = nrow(iris10_nn10$dist),
+resp <- calc_row_probabilities_parallel(iris10nn10d,
+  n_vertices = nrow(iris10_nn10$dist),
   perplexity = 4,
   n_threads = 0,
   ret_sigma = TRUE
@@ -111,7 +114,8 @@ res <- nng_to_sparse(iris10_nn10$idx, as.vector(t(res)),
 expect_equal(as.matrix(res), P_row, tol = 1e-5, check.attributes = FALSE)
 expect_equal(resp$sigma, expected_sigmas, tol = 1e-5)
 
-res <- calc_row_probabilities_parallel(iris10nn10d, n_vertices = nrow(iris10_nn10$dist),
+res <- calc_row_probabilities_parallel(iris10nn10d,
+  n_vertices = nrow(iris10_nn10$dist),
   perplexity = 4, n_threads = 1
 )$matrix
 res <- nng_to_sparse(iris10_nn10$idx, as.vector(t(res)),
@@ -124,7 +128,7 @@ uiris <- iris[!iris_dup, ]
 # LargeVis-style iris normalization
 normiris <- scale(x2m(uiris), center = TRUE, scale = FALSE)
 normiris <- normiris / max(abs(normiris))
-# niris10_nn149 <- dist_nn(dist(normiris), k = 149)
+# niris10_nn149 <- dist_nn(stats::dist(normiris), k = 149)
 # expect_equal(1 / res$sigma ^ 2, Prow_niris_p150_k50_betas, tol = 1e-5)
 
 # Taken from the LargeVis C++ implementation
@@ -173,7 +177,7 @@ res <- perplexity_similarities(
   )
 )
 expect_equal(Matrix::rowSums(res$matrix), Prow_iris_p150_k50_rowSums, tol = 1e-6)
-expect_equal(1 / res$sigma ^ 2, Prow_niris_p150_k50_betas, tol = 1e-6)
+expect_equal(1 / res$sigma^2, Prow_niris_p150_k50_betas, tol = 1e-6)
 
 res <- perplexity_similarities(
   perplexity = 50, n_threads = 1, verbose = FALSE,

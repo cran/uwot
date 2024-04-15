@@ -1,44 +1,82 @@
 find_nn <- function(X, k, include_self = TRUE, method = "fnn",
                     metric = "euclidean",
                     n_trees = 50, search_k = 2 * k * n_trees,
+                    nn_args = nn_args,
                     tmpdir = tempdir(),
                     n_threads = NULL,
                     grain_size = 1,
                     ret_index = FALSE,
+                    sparse_is_distance = TRUE,
                     verbose = FALSE) {
   if (is.null(n_threads)) {
     n_threads <- default_num_threads()
   }
-  if (methods::is(X, "dist")) {
-    res <- dist_nn(X, k, include_self = include_self)
-  }
-  else if (is_sparse_matrix(X)) {
+
+  if (inherits(X, "dist")) {
+    res <- dist_nn(X, k, include_self = include_self, verbose = verbose)
+  } else if (sparse_is_distance && is_sparse_matrix(X)) {
     # sparse distance matrix
     if (Matrix::isTriangular(X)) {
-      res <- sparse_tri_nn(X, k, include_self = include_self)
+      res <- sparse_tri_nn(X, k, include_self = include_self, verbose = verbose)
+    } else {
+      res <- sparse_nn(X, k, include_self = include_self, verbose = verbose)
     }
-    else {
-      res <- sparse_nn(X, k, include_self = include_self)
+  } else {
+    if (is_sparse_matrix(X) && method != "nndescent") {
+      stop("Sparse matrix input only supported for nndescent method.")
     }
-  }
-  else {
     # normal matrix
-    if (method == "fnn") {
-      res <- FNN_nn(X, k = k, include_self = include_self)
-    }
-    else {
-      res <- annoy_nn(X,
-        k = k,
-        metric = metric,
-        n_trees = n_trees, search_k = search_k,
-        tmpdir = tmpdir,
-        n_threads = n_threads,
-        ret_index = ret_index,
-        verbose = verbose
-      )
-    }
-  }
+    switch(method,
+      "fnn" = {
+        res <- FNN_nn(X, k = k, include_self = include_self)
+      },
+      "annoy" = {
+        nn_args_names <- names(nn_args)
 
+        if ("n_trees" %in% nn_args_names) {
+          n_trees <- nn_args$n_trees
+        }
+
+        if ("search_k" %in% nn_args_names) {
+          search_k <- nn_args$search_k
+        }
+
+        res <- annoy_nn(
+          X,
+          k = k,
+          metric = metric,
+          n_trees = n_trees,
+          search_k = search_k,
+          tmpdir = tmpdir,
+          n_threads = n_threads,
+          ret_index = ret_index,
+          verbose = verbose
+        )
+      },
+      "hnsw" = {
+        nn_args$X <- X
+        nn_args$k <- k
+        nn_args$metric <- metric
+        nn_args$n_threads <- n_threads
+        nn_args$verbose <- verbose
+        nn_args$ret_index <- ret_index
+
+        res <- do.call(hnsw_nn, nn_args)
+      },
+      "nndescent" = {
+        res <- nndescent_nn(
+          X,
+          k = k,
+          metric = metric,
+          nn_args = nn_args,
+          n_threads = n_threads,
+          ret_index = ret_index,
+          verbose = verbose
+        )
+      },
+      stop("Unknown method: ", method)
+    )
+  }
   res
 }
 
@@ -57,6 +95,10 @@ nn_is_precomputed <- function(nn) {
 # TRUE if we are using an annoy index
 nn_is_annoy <- function(ann) {
   is.list(ann) && !is.null(ann$type) && startsWith(ann$type, "annoy")
+}
+
+nn_is_hnsw <- function(ann) {
+  is.list(ann) && !is.null(ann$type) && startsWith(ann$type, "hnsw")
 }
 
 # n_trees - number of trees to build when constructing the index. The more trees
@@ -102,19 +144,13 @@ annoy_nn <- function(X, k = 10,
 }
 
 annoy_create <- function(metric, ndim) {
-  if (metric == "correlation") {
-    name <- "cosine"
-  }
-  else {
-    name <- metric
-  }
-  
-  rcppannoy <- create_ann(name, ndim)
-  
+  rcppannoy <- create_ann(metric, ndim)
+
   list(
     ann = rcppannoy,
     type = "annoyv1",
-    metric = metric
+    metric = metric,
+    ndim = ndim
   )
 }
 
@@ -124,7 +160,7 @@ annoy_build <- function(X, metric = "euclidean", n_trees = 50,
   nc <- ncol(X)
 
   annoy <- annoy_create(metric, nc)
-  
+
   if (metric == "correlation") {
     tsmessage("Annoy build: subtracting row means for correlation")
     X <- sweep(X, 1, rowMeans(X))
@@ -145,8 +181,7 @@ annoy_build <- function(X, metric = "euclidean", n_trees = 50,
         }
       }
     )
-  }
-  else {
+  } else {
     for (i in 1:nr) {
       ann$addItem(i - 1, X[i, ])
     }
@@ -159,12 +194,14 @@ annoy_build <- function(X, metric = "euclidean", n_trees = 50,
 }
 
 # create RcppAnnoy class from metric name with ndim dimensions
+# Correlation uses AnnoyAngular, input data needs to be centered first
 create_ann <- function(name, ndim) {
   ann <- switch(name,
-    cosine =  methods::new(RcppAnnoy::AnnoyAngular, ndim),
+    cosine = methods::new(RcppAnnoy::AnnoyAngular, ndim),
     manhattan = methods::new(RcppAnnoy::AnnoyManhattan, ndim),
     euclidean = methods::new(RcppAnnoy::AnnoyEuclidean, ndim),
     hamming = methods::new(RcppAnnoy::AnnoyHamming, ndim),
+    correlation = methods::new(RcppAnnoy::AnnoyAngular, ndim),
     stop("BUG: unknown Annoy metric '", name, "'")
   )
 }
@@ -173,13 +210,15 @@ create_ann <- function(name, ndim) {
 get_rcppannoy <- function(nni) {
   if (startsWith(class(nni), "Rcpp_Annoy")) {
     rcppannoy <- nni
-  }
-  else if (nn_is_annoy(nni)) {
+  } else if (nn_is_annoy(nni)) {
     rcppannoy <- nni$ann
-  }
-  else {
-    stop("BUG: Found an unknown ann implementation of class: '", 
-         class(nni), "'")
+  } else if (nn_is_hnsw(nni)) {
+    rcppannoy <- nni$ann
+  } else {
+    stop(
+      "BUG: Found an unknown ann implementation of class: '",
+      class(nni), "'"
+    )
   }
   rcppannoy
 }
@@ -201,7 +240,7 @@ annoy_search <- function(X, k, ann,
       X <- sweep(X, 1, rowMeans(X))
     }
   }
-  
+
   if (is.null(n_threads)) {
     n_threads <- default_num_threads()
   }
@@ -215,8 +254,7 @@ annoy_search <- function(X, k, ann,
       verbose = verbose
     )
     res <- list(idx = annoy_res$item + 1, dist = annoy_res$distance)
-  }
-  else {
+  } else {
     res <- annoy_search_serial(
       X = X, k = k, ann = ann,
       search_k = search_k,
@@ -263,8 +301,7 @@ annoy_search_serial <- function(X, k, ann,
         }
       }
     )
-  }
-  else {
+  } else {
     for (i in 1:nr) {
       res <- ann$getNNsByVectorList(X[i, ], k, search_k, TRUE)
       if (length(res$item) != k) {
@@ -350,7 +387,8 @@ FNN_nn <- function(X, k = 10, include_self = TRUE) {
   list(idx = idx, dist = dist)
 }
 
-dist_nn <- function(X, k, include_self = TRUE) {
+dist_nn <- function(X, k, include_self = TRUE, verbose = FALSE) {
+  tsmessage("Finding nearest neighbors from distance matrix")
   X <- as.matrix(X)
 
   if (!include_self) {
@@ -374,7 +412,9 @@ dist_nn <- function(X, k, include_self = TRUE) {
   list(idx = nn_idx, dist = nn_dist)
 }
 
-sparse_nn <- function(X, k, include_self = TRUE) {
+sparse_nn <- function(X, k, include_self = TRUE, verbose = FALSE) {
+  tsmessage("Finding nearest neighbors from sparse matrix")
+
   if (include_self) {
     k <- k - 1
   }
@@ -411,25 +451,26 @@ sparse_nn <- function(X, k, include_self = TRUE) {
 }
 
 # Extract knn data from sparse lower/upper triangular matrix
-sparse_tri_nn <- function(X, k, include_self = TRUE) {
+sparse_tri_nn <- function(X, k, include_self = TRUE, verbose = FALSE) {
+  tsmessage("Finding nearest neighbors from sparse triangular matrix")
   if (include_self) {
     k <- k - 1
   }
-  
+
   n <- nrow(X)
   nn_idx <- matrix(0, nrow = n, ncol = k)
   nn_dist <- matrix(0, nrow = n, ncol = k)
 
-  # this will get the i,j,x values no matter the internal representation  
+  # this will get the i,j,x values no matter the internal representation
   Xsumm <- summary(X)
-  
+
   for (i in 1:n) {
     # get indices where $i/j == i
     idxji <- Xsumm$j == i
     idxii <- Xsumm$i == i
-    
+
     idxi <- idxji | idxii
-    
+
     # find non-zero distances
     dists <- Xsumm$x[idxi]
     is_nonzero <- dists != 0
@@ -440,25 +481,40 @@ sparse_tri_nn <- function(X, k, include_self = TRUE) {
         " defined distances"
       )
     }
-    
+
     # find indices of k-smallest distances
     k_order <- order(dist_nonzero)[1:k]
     nn_dist[i, ] <- dist_nonzero[k_order]
-    
+
     # get indices into original vector
     isk <- which(idxi)[k_order]
     Xis <- Xsumm$i[isk]
     Xjs <- Xsumm$j[isk]
-    # We don't know if the non-i index is in the i or j column 
+    # We don't know if the non-i index is in the i or j column
     # so do this slightly horrible logical * integer arithmetic
     # which will add the correct index to 0
     nn_idx[i, ] <- ((Xis != i) * Xis) + ((Xjs != i) * Xjs)
   }
-  
+
   if (include_self) {
     nn_idx <- cbind(1:n, nn_idx)
     nn_dist <- cbind(rep(0, n), nn_dist)
   }
-  
+
   list(idx = nn_idx, dist = nn_dist)
+}
+
+is_binary_metric <- function(metric) {
+  metric %in% c(
+    "dice",
+    "hamming",
+    "jaccard",
+    "kulsinski",
+    "matching",
+    "rogerstanimoto",
+    "russellrao",
+    "sokalmichener",
+    "sokalsneath",
+    "yule"
+  )
 }

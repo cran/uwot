@@ -213,10 +213,16 @@ umap_transform <- function(X = NULL, model = NULL,
                            opt_args = NULL,
                            epoch_callback = NULL,
                            ret_extra = NULL,
-                           seed = NULL
-                           ) {
+                           seed = NULL) {
   if (is.null(n_threads)) {
     n_threads <- default_num_threads()
+  }
+  if (is.character(n_sgd_threads) && n_sgd_threads == "auto") {
+    n_sgd_threads <- n_threads
+  }
+  if (!is.numeric(n_sgd_threads)) {
+    stop("Unknown n_sgd_threads value: ", n_sgd_threads, " should be a positive
+         integer or 'auto'")
   }
   if (is.null(nn_method)) {
     if (is.null(X)) {
@@ -226,15 +232,30 @@ umap_transform <- function(X = NULL, model = NULL,
       stop('argument "model" is missing, with no default')
     }
     if (!all_nn_indices_are_loaded(model)) {
-      stop("cannot use model: NN index is unloaded." ,
-           " Try reloading with `load_uwot`")
+      stop(
+        "cannot use model: NN index is unloaded.",
+        " Try reloading with `load_uwot`"
+      )
     }
-  }
-  else {
+  } else {
     if (!is.null(X)) {
       tsmessage('argument "nn_method" is provided, ignoring argument "X"')
       X <- NULL
     }
+  }
+
+  if (is.character(model$nn_method) &&
+      model$nn_method == "hnsw" && !is_installed("RcppHNSW")) {
+    stop(
+      "This model requires the RcppHNSW package to be installed."
+    )
+  }
+
+  if (is.character(model$nn_method) &&
+      model$nn_method == "nndescent" && !is_installed("rnndescent")) {
+    stop(
+      "This model requires the rnndescent package to be installed."
+    )
   }
 
   if (is.null(n_epochs)) {
@@ -242,12 +263,10 @@ umap_transform <- function(X = NULL, model = NULL,
     if (is.null(n_epochs)) {
       if (ncol(graph) <= 10000) {
         n_epochs <- 100
-      }
-      else {
+      } else {
         n_epochs <- 30
       }
-    }
-    else {
+    } else {
       n_epochs <- max(2, round(n_epochs / 3))
     }
   }
@@ -270,8 +289,7 @@ umap_transform <- function(X = NULL, model = NULL,
       set.seed(model$seed)
     }
     # otherwise no model seed, so do nothing
-  }
-  else {
+  } else {
     tsmessage("Setting random seed ", seed)
     set.seed(seed)
   }
@@ -288,8 +306,10 @@ umap_transform <- function(X = NULL, model = NULL,
   if (!is.matrix(train_embedding)) {
     # this should only happen if the user set
     # `n_epochs = 0, init = NULL, ret_model = TRUE`
-    stop("Invalid embedding coordinates: should be a matrix, but got ",
-         paste0(class(train_embedding), collapse = " "))
+    stop(
+      "Invalid embedding coordinates: should be a matrix, but got ",
+      paste0(class(train_embedding), collapse = " ")
+    )
   }
   if (any(is.na(train_embedding))) {
     stop("Model embedding coordinates contains NA values")
@@ -315,8 +335,7 @@ umap_transform <- function(X = NULL, model = NULL,
   if (is.null(batch)) {
     if (!is.null(model$batch)) {
       batch <- model$batch
-    }
-    else {
+    } else {
       batch <- FALSE
     }
   }
@@ -324,8 +343,7 @@ umap_transform <- function(X = NULL, model = NULL,
   if (is.null(opt_args)) {
     if (!is.null(model$opt_args)) {
       opt_args <- model$opt_args
-    }
-    else {
+    } else {
       opt_args <- list()
     }
   }
@@ -335,11 +353,10 @@ umap_transform <- function(X = NULL, model = NULL,
   gamma <- model$gamma
   if (is.null(learning_rate)) {
     alpha <- model$alpha
-  }
-  else {
+  } else {
     alpha <- learning_rate
   }
-  if (! is.numeric(alpha) || length(alpha) > 1 || alpha < 0) {
+  if (!is.numeric(alpha) || length(alpha) > 1 || alpha < 0) {
     stop("learning rate should be a positive number, not ", alpha)
   }
   negative_sample_rate <- model$negative_sample_rate
@@ -360,7 +377,8 @@ umap_transform <- function(X = NULL, model = NULL,
   n_vertices <- NULL
   Xnames <- NULL
   if (!is.null(X)) {
-    if (!(methods::is(X, "data.frame") || methods::is(X, "matrix"))) {
+    if (!(methods::is(X, "data.frame") ||
+          methods::is(X, "matrix") || is_sparse_matrix(X))) {
       stop("Unknown input data format")
     }
     if (!is.null(norig_col) && ncol(X) != norig_col) {
@@ -393,27 +411,32 @@ umap_transform <- function(X = NULL, model = NULL,
       nn_method <- list(nn_method)
     }
     if (length(nn_method) != num_precomputed_nns) {
-      stop("Wrong # pre-computed neighbor data blocks, expected: ",
-           num_precomputed_nns, " but got: ", length(nn_method))
+      stop(
+        "Wrong # pre-computed neighbor data blocks, expected: ",
+        num_precomputed_nns, " but got: ", length(nn_method)
+      )
     }
     if (length(n_neighbors) != num_precomputed_nns) {
-      stop("Wrong # n_neighbor values (one per neighbor block), expected: ",
-           num_precomputed_nns, " but got: ", length(n_neighbors))
+      stop(
+        "Wrong # n_neighbor values (one per neighbor block), expected: ",
+        num_precomputed_nns, " but got: ", length(n_neighbors)
+      )
     }
     for (i in 1:num_precomputed_nns) {
       graph <- nn_method[[i]]
 
       if (is.list(graph)) {
-        check_graph(graph, expected_rows = n_vertices,
-                    expected_cols = n_neighbors[[i]], bipartite = TRUE)
+        check_graph(graph,
+          expected_rows = n_vertices,
+          expected_cols = n_neighbors[[i]], bipartite = TRUE
+        )
         if (is.null(n_vertices)) {
           n_vertices <- nrow(graph$idx)
         }
         if (is.null(Xnames)) {
           Xnames <- nn_graph_row_names(graph)
         }
-      }
-      else if (is_sparse_matrix(graph)) {
+      } else if (is_sparse_matrix(graph)) {
         # nn graph should have dims n_train_obs x n_test_obs
         graph <- Matrix::drop0(graph)
         if (is.null(n_vertices)) {
@@ -422,8 +445,7 @@ umap_transform <- function(X = NULL, model = NULL,
         if (is.null(Xnames)) {
           Xnames <- colnames(graph)
         }
-      }
-      else {
+      } else {
         stop("Error: unknown neighbor graph format")
       }
     }
@@ -433,26 +455,24 @@ umap_transform <- function(X = NULL, model = NULL,
   if (!is.null(init)) {
     if (is.logical(init)) {
       init_weighted <- init
-    }
-    else if (is.character(init)) {
+    } else if (is.character(init)) {
       init <- tolower(init)
       if (init == "average") {
         init_weighted <- FALSE
-      }
-      else if (init == "weighted") {
+      } else if (init == "weighted") {
         init_weighted <- TRUE
-      }
-      else {
+      } else {
         stop("Unknown option for init: '", init, "'")
       }
-    }
-    else if (is.matrix(init)) {
+    } else if (is.matrix(init)) {
       indim <- dim(init)
       xdim <- c(n_vertices, ndim)
       if (!all(indim == xdim)) {
-        stop("Initial embedding matrix has wrong dimensions, expected (",
-             xdim[1], ", ", xdim[2], "), but was (",
-             indim[1], ", ", indim[2], ")")
+        stop(
+          "Initial embedding matrix has wrong dimensions, expected (",
+          xdim[1], ", ", xdim[2], "), but was (",
+          indim[1], ", ", indim[2], ")"
+        )
       }
       if (any(is.na(init))) {
         stop("Initial embedding matrix coordinates contains NA values")
@@ -461,8 +481,7 @@ umap_transform <- function(X = NULL, model = NULL,
         Xnames <- row.names(init)
       }
       init_weighted <- NULL
-    }
-    else {
+    } else {
       stop("Invalid input format for 'init'")
     }
   }
@@ -502,8 +521,7 @@ umap_transform <- function(X = NULL, model = NULL,
       if (nblocks == 1) {
         Xsub <- X
         ann <- nn_index
-      }
-      else {
+      } else {
         subset <- metric[[i]]
         if (is.list(subset)) {
           subset <- lsplit_unnamed(subset)$unnamed[[1]]
@@ -518,12 +536,61 @@ umap_transform <- function(X = NULL, model = NULL,
           verbose = verbose
         )
       }
-      nn <- annoy_search(Xsub,
-                         k = n_neighbors, ann = ann, search_k = search_k,
-                         prep_data = TRUE,
-                         tmpdir = tmpdir,
-                         n_threads = n_threads, grain_size = grain_size,
-                         verbose = verbose)
+      if (is.null(ann$type) || startsWith(ann$type, "annoy")) {
+        nn <- annoy_search(
+          Xsub,
+          k = n_neighbors,
+          ann = ann,
+          search_k = search_k,
+          prep_data = TRUE,
+          tmpdir = tmpdir,
+          n_threads = n_threads,
+          grain_size = grain_size,
+          verbose = verbose
+        )
+      }
+      else if (startsWith(ann$type, "hnsw")) {
+        if (is.list(model$nn_args)) {
+          nn_args <- model$nn_args
+          nn_args_names <- names(nn_args)
+
+          if ("ef" %in% nn_args_names) {
+            ef <- nn_args$ef
+          }
+          else {
+            ef <- 10
+          }
+        }
+
+        nn <- hnsw_search(
+          X,
+          k = n_neighbors,
+          ann = ann,
+          ef = ef,
+          n_threads = n_threads,
+          verbose = verbose
+        )
+
+        # We use the L2 HNSW index for Euclidean so we need to process the
+        # distances
+        if (names(model$metric)[[1]] == "euclidean") {
+          nn$dist <- sqrt(nn$dist)
+        }
+      }
+      else if (startsWith(ann$type, "nndescent")) {
+        nn <-
+          nndescent_search(
+            X,
+            k = n_neighbors,
+            ann = ann,
+            nn_args = model$nn_args,
+            n_threads = n_threads,
+            verbose = verbose
+          )
+      }
+      else {
+        stop("Unknown nn method: ", ann$type)
+      }
       if (ret_nn) {
         export_nns[[i]] <- nn
         names(export_nns)[[i]] <- ann$metric
@@ -535,10 +602,11 @@ umap_transform <- function(X = NULL, model = NULL,
         export_nns[[i]] <- nn
         names(export_nns)[[i]] <- "precomputed"
       }
-    }
-    else {
-      stop("Can't transform new data if X is NULL ",
-           "and no sparse distance matrix available")
+    } else {
+      stop(
+        "Can't transform new data if X is NULL ",
+        "and no sparse distance matrix available"
+      )
     }
 
     osparse <- NULL
@@ -554,14 +622,12 @@ umap_transform <- function(X = NULL, model = NULL,
       }
       target <- log2(n_nbrs)
       skip_first <- TRUE
-    }
-    else {
+    } else {
       nnt <- nn_graph_t(nn)
       if (length(n_neighbors) == nblocks) {
         # if model came from multiple different external neighbor data
         n_nbrs <- n_neighbors[[i]]
-      }
-      else {
+      } else {
         # multiple internal blocks
         n_nbrs <- n_neighbors
       }
@@ -569,8 +635,10 @@ umap_transform <- function(X = NULL, model = NULL,
         # original neighbor data was sparse, but we are using dense knn format
         # or n_neighbors doesn't match
         n_nbrs <- nrow(nnt$idx)
-        tsmessage("Possible mismatch with original vs new neighbor data ",
-                  "format, using ", n_nbrs, " nearest neighbors")
+        tsmessage(
+          "Possible mismatch with original vs new neighbor data ",
+          "format, using ", n_nbrs, " nearest neighbors"
+        )
       }
       target <- log2(n_nbrs)
       nn_ptr <- n_nbrs
@@ -602,10 +670,11 @@ umap_transform <- function(X = NULL, model = NULL,
 
     graph_blockv <- sknn_res$matrix
     if (is_sparse_matrix(nn)) {
-      graph_block <- Matrix::sparseMatrix(j = osparse$i, p = osparse$p, x = graph_blockv,
-                                dims = rev(osparse$dims), index1 = FALSE)
-    }
-    else {
+      graph_block <- Matrix::sparseMatrix(
+        j = osparse$i, p = osparse$p, x = graph_blockv,
+        dims = rev(osparse$dims), index1 = FALSE
+      )
+    } else {
       graph_block <- nn_to_sparse(nn_idxv, n_vertices, graph_blockv,
         self_nbr = FALSE,
         max_nbr_id = n_train_vertices,
@@ -627,18 +696,18 @@ umap_transform <- function(X = NULL, model = NULL,
         )
       if (is.null(embedding)) {
         embedding <- embedding_block
-      }
-      else {
+      } else {
         embedding <- embedding + embedding_block
       }
     }
 
     if (is.null(graph)) {
       graph <- graph_block
-    }
-    else {
-      graph <- set_intersect(graph, graph_block, weight = 0.5,
-                             reset_connectivity = FALSE)
+    } else {
+      graph <- set_intersect(graph, graph_block,
+        weight = 0.5,
+        reset_connectivity = FALSE
+      )
     }
   }
 
@@ -646,8 +715,7 @@ umap_transform <- function(X = NULL, model = NULL,
     if (nblocks > 1) {
       embedding <- embedding / nblocks
     }
-  }
-  else {
+  } else {
     tsmessage("Initializing from user-supplied matrix")
     embedding <- t(init)
   }
@@ -655,6 +723,11 @@ umap_transform <- function(X = NULL, model = NULL,
   if (binary_edge_weights) {
     tsmessage("Using binary edge weights")
     graph@x <- rep(1, length(graph@x))
+  }
+
+  if (batch) {
+    # This is the same arrangement as Python UMAP
+    graph <- Matrix::t(graph)
   }
 
   if (n_epochs > 0) {
@@ -667,16 +740,13 @@ umap_transform <- function(X = NULL, model = NULL,
     # i.e. the presence of (i->j) does NOT mean (j->i) is also present because
     # i and j now come from different data
     if (batch) {
-      # This is the same arrangement as Python UMAP
-      graph <- Matrix::t(graph)
       # ordered indices of the new data nodes. Coordinates are updated
       # during optimization
       positive_head <- Matrix::which(graph != 0, arr.ind = TRUE)[, 2] - 1
       # unordered indices of the model nodes (some may not have any incoming
       # edges), these coordinates will NOT update during the optimization
       positive_tail <- graph@i
-    }
-    else {
+    } else {
       # unordered indices of the new data nodes. Coordinates are updated
       # during optimization
       positive_head <- graph@i
@@ -705,9 +775,9 @@ umap_transform <- function(X = NULL, model = NULL,
       # Use the linear model 2 log ai = -m log(localr) + c
       ai <- exp(0.5 * ((-log(localr) * rad_coeff[2]) + rad_coeff[1]))
       # Prevent too-small/large aj
-      min_ai <- min(sqrt(a * 10 ^ (-2 * dens_scale)), 0.1)
+      min_ai <- min(sqrt(a * 10^(-2 * dens_scale)), 0.1)
       ai[ai < min_ai] <- min_ai
-      max_ai <- sqrt(a * 10 ^ (2 * dens_scale))
+      max_ai <- sqrt(a * 10^(2 * dens_scale))
       ai[ai > max_ai] <- max_ai
       method <- "leopold2"
     }
@@ -766,9 +836,7 @@ umap_transform <- function(X = NULL, model = NULL,
         res$nn <- export_nns
       }
     }
-
-  }
-  else {
+  } else {
     res <- embedding
   }
 
@@ -819,8 +887,7 @@ init_transform <- function(train_embedding, nn_index, weights = NULL) {
       nbr_embedding <- train_embedding[nn_index[i, ], ]
       embedding[i, ] <- apply(nbr_embedding, 2, mean)
     }
-  }
-  else {
+  } else {
     for (i in 1:nr) {
       nbr_embedding <- train_embedding[nn_index[i, ], ]
       nbr_weights <- weights[nn_index[i, ], i]
@@ -841,18 +908,15 @@ apply_scaling <- function(X, scale_info, verbose = FALSE) {
     tsmessage("Applying training data range scaling")
     X <- X - scale_info[["scaled:range:min"]]
     X <- X / scale_info[["scaled:range:max"]]
-  }
-  else if (!is.null(scale_info[["scaled:maxabs"]])) {
+  } else if (!is.null(scale_info[["scaled:maxabs"]])) {
     tsmessage("Applying training data max-abs scaling")
     X <- scale(X, center = scale_info[["scaled:center"]], scale = FALSE)
     X <- X / scale_info[["scaled:maxabs"]]
-  }
-  else if (!is.null(scale_info[["scaled:colrange:min"]])) {
+  } else if (!is.null(scale_info[["scaled:colrange:min"]])) {
     tsmessage("Applying training data column range scaling")
     X <- sweep(X, 2, scale_info[["scaled:colrange:min"]])
     X <- sweep(X, 2, scale_info[["scaled:colrange:max"]], `/`)
-  }
-  else {
+  } else {
     tsmessage("Applying training data column filtering/scaling")
     X <- X[, scale_info[["scaled:nzvcols"]]]
     X <- scale(X,
@@ -870,21 +934,4 @@ apply_pca <- function(X, pca_res, verbose = FALSE) {
     X <- sweep(X, 2, pca_res$center)
   }
   X %*% pca_res$rotation
-}
-
-all_nn_indices_are_loaded <- function(model) {
-  if (is.null(model$nn_index)) {
-    stop("Invalid model: has no 'nn_index'")
-  }
-  if (is.list(model$nn_index)) {
-    for (i in 1:length(model$nn_index)) {
-      if (model$nn_index$getNTrees() == 0) {
-        return(FALSE)
-      }
-    }
-  }
-  else if (model$nn_index$getNTrees() == 0) {
-    return(FALSE)
-  }
-  TRUE
 }

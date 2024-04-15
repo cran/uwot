@@ -19,8 +19,7 @@
 laplacian_eigenmap <- function(A, ndim = 2, verbose = FALSE, force_irlba = FALSE) {
   if (rspectra_is_installed() && !force_irlba) {
     coords <- rspectra_laplacian_eigenmap(A, ndim, verbose = verbose)
-  }
-  else {
+  } else {
     coords <- irlba_laplacian_eigenmap(A, ndim, verbose = verbose)
   }
   coords
@@ -96,8 +95,7 @@ form_modified_laplacian <- function(A, ret_d = FALSE) {
   Matrix::diag(L) <- 1 + Matrix::diag(L)
   if (ret_d) {
     list(L = L, Disqrt = 1 / Dsq)
-  }
-  else {
+  } else {
     L
   }
 }
@@ -111,8 +109,7 @@ sort_eigenvectors <- function(eig_res, ndim) {
 normalized_laplacian_init <- function(A, ndim = 2, verbose = FALSE, force_irlba = FALSE) {
   if (rspectra_is_installed() && !force_irlba) {
     coords <- rspectra_normalized_laplacian_init(A, ndim, verbose = verbose)
-  }
-  else {
+  } else {
     coords <- irlba_normalized_laplacian_init(A, ndim, verbose = verbose)
   }
   coords
@@ -166,22 +163,24 @@ irlba_spectral_tsvd <- function(L, n, iters = 1000) {
 }
 
 irlba_eigs_asym <- function(L, ndim) {
-  suppressWarnings(res <- tryCatch({
-    res <- irlba::partial_eigen(
-      L,
-      n = ndim + 1,
-      symmetric = FALSE,
-      smallest = TRUE,
-      tol = 1e-3,
-      maxit = 1000,
-      verbose = TRUE
-    )
-    res$values <- sqrt(res$values)
-    res
-  },
-  error = function(c) {
-    NULL
-  }))
+  suppressWarnings(res <- tryCatch(
+    {
+      res <- irlba::partial_eigen(
+        L,
+        n = ndim + 1,
+        symmetric = FALSE,
+        smallest = TRUE,
+        tol = 1e-3,
+        maxit = 1000,
+        verbose = TRUE
+      )
+      res$values <- sqrt(res$values)
+      res
+    },
+    error = function(c) {
+      NULL
+    }
+  ))
   res
 }
 
@@ -240,8 +239,7 @@ spectral_init <- function(A, ndim = 2, verbose = FALSE, force_irlba = FALSE) {
   if (rspectra_is_installed() && !force_irlba) {
     tsmessage("Initializing from normalized Laplacian + noise (using RSpectra)")
     coords <- rspectra_normalized_laplacian_init(A, ndim, verbose = FALSE)
-  }
-  else {
+  } else {
     tsmessage("Initializing from normalized Laplacian + noise (using irlba)")
     coords <- irlba_tsvd_normalized_laplacian_init(A, ndim, verbose = FALSE)
   }
@@ -262,7 +260,7 @@ irlba_spectral_init <- function(A, ndim = 2, verbose = FALSE) {
 # Scales coords so that the largest absolute coordinate is 10.0 then jitters by
 # adding gaussian noise with mean 0 and standard deviation sd
 scale_and_jitter <- function(coords, max_coord = 10.0, sd = 0.0001) {
-   expansion <- 10.0 / max(abs(coords))
+  expansion <- 10.0 / max(abs(coords))
   (coords * expansion) + matrix(stats::rnorm(n = prod(dim(coords)), sd = sd),
     ncol = ncol(coords)
   )
@@ -292,6 +290,12 @@ rand_init_lv <- function(n, ndim, verbose = FALSE) {
 # distances lead to small gradients, and hence small updates, so should be
 # avoided.
 scale_coords <- function(X, sdev = 1e-4, verbose = FALSE) {
+  if (is.character(sdev) && sdev == "range") {
+    # #99: range scale coordinates like python UMAP does
+    tsmessage("Range-scaling initial input columns to 0-10")
+    return(apply(X, 2, range_scale, max = 10.0))
+  }
+
   if (is.null(sdev)) {
     return(X)
   }
@@ -305,12 +309,12 @@ scale_coords <- function(X, sdev = 1e-4, verbose = FALSE) {
 # Returns the score matrix unless ret_extra is TRUE, in which case a list
 # is returned also containing the eigenvalues
 pca_init <- function(X, ndim = min(dim(X)), center = TRUE, ret_extra = FALSE,
-                       pca_method = "auto", verbose = FALSE) {
-  if (methods::is(X, "dist")) {
+                     pca_method = "auto", verbose = FALSE) {
+  if (inherits(X, "dist")) {
     res_mds <- stats::cmdscale(X, x.ret = TRUE, eig = TRUE, k = ndim)
-
     if (ret_extra || verbose) {
       lambda <- res_mds$eig
+      lambda[lambda < 0] <- 0
       varex <- sum(lambda[1:ndim]) / sum(lambda)
       tsmessage(
         "PCA (using classical MDS): ", ndim, " components explained ",
@@ -399,6 +403,11 @@ svd_scores <- function(X, ncol = min(dim(X)), center = TRUE, ret_extra = FALSE,
 
 # Get PCA scores via irlba
 irlba_scores <- function(X, ncol, center = TRUE, ret_extra = FALSE, verbose = FALSE) {
+  if (is.logical(X)) {
+    tsmessage("Converting logical input to numeric for PCA initialization")
+    # convert logical matrix to numeric
+    X <- X * 1
+  }
   res <- irlba::prcomp_irlba(X,
     n = ncol, retx = TRUE, center = center,
     scale = FALSE

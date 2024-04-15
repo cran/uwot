@@ -1,7 +1,7 @@
 #' Dimensionality Reduction with UMAP
 #'
 #' Carry out dimensionality reduction of a dataset using the Uniform Manifold
-#' Approximation and Projection (UMAP) method (McInnes & Healy, 2018). Some of
+#' Approximation and Projection (UMAP) method (McInnes et al., 2018). Some of
 #' the following help text is lifted verbatim from the Python reference
 #' implementation at \url{https://github.com/lmcinnes/umap}.
 #'
@@ -27,8 +27,8 @@
 #' @param n_components The dimension of the space to embed into. This defaults
 #'   to \code{2} to provide easy visualization, but can reasonably be set to any
 #'   integer value in the range \code{2} to \code{100}.
-#' @param metric Type of distance metric to use to find nearest neighbors. One
-#'   of:
+#' @param metric Type of distance metric to use to find nearest neighbors. For
+#'  \code{nn_method = "annoy"} this can be one of:
 #' \itemize{
 #'   \item \code{"euclidean"} (the default)
 #'   \item \code{"cosine"}
@@ -37,8 +37,36 @@
 #'   \item \code{"correlation"} (a distance based on the Pearson correlation)
 #'   \item \code{"categorical"} (see below)
 #' }
-#' Only applies if \code{nn_method = "annoy"} (for \code{nn_method = "fnn"}, the
-#' distance metric is always "euclidean").
+#' For \code{nn_method = "hnsw"} this can be one of:
+#' \itemize{
+#'   \item \code{"euclidean"}
+#'   \item \code{"cosine"}
+#'   \item \code{"correlation"}
+#' }
+#' If \href{https://cran.r-project.org/package=rnndescent}{rnndescent} is
+#' installed and \code{nn_method = "nndescent"} is specified then many more
+#' metrics are avaiable, including:
+#' \itemize{
+#' \item \code{"braycurtis"}
+#' \item \code{"canberra"}
+#' \item \code{"chebyshev"}
+#' \item \code{"dice"}
+#' \item \code{"hamming"}
+#' \item \code{"hellinger"}
+#' \item \code{"jaccard"}
+#' \item \code{"jensenshannon"}
+#' \item \code{"kulsinski"}
+#' \item \code{"rogerstanimoto"}
+#' \item \code{"russellrao"}
+#' \item \code{"sokalmichener"}
+#' \item \code{"sokalsneath"}
+#' \item \code{"spearmanr"}
+#' \item \code{"symmetrickl"}
+#' \item \code{"tsss"}
+#' \item \code{"yule"}
+#' }
+#' For more details see the package documentation of \code{rnndescent}.
+#' For \code{nn_method = "fnn"}, the distance metric is always "euclidean".
 #'
 #' If \code{X} is a data frame or matrix, then multiple metrics can be
 #' specified, by passing a list to this argument, where the name of each item in
@@ -178,6 +206,21 @@
 #'       \href{https://cran.r-project.org/package=FNN}{FNN} package.
 #'     \item \code{"annoy"} Use approximate nearest neighbors via the
 #'       \href{https://cran.r-project.org/package=RcppAnnoy}{RcppAnnoy} package.
+#'     \item \code{"hnsw"} Use approximate nearest neighbors with the
+#'       Hierarchical Navigable Small World (HNSW) method (Malkov and Yashunin,
+#'       2018) via the
+#'       \href{https://cran.r-project.org/package=RcppHNSW}{RcppHNSW} package.
+#'       \code{RcppHNSW} is not a dependency of this package: this option is
+#'       only available if you have installed \code{RcppHNSW} yourself. Also,
+#'       HNSW only supports the following arguments for \code{metric} and
+#'       \code{target_metric}: \code{"euclidean"}, \code{"cosine"} and
+#'       \code{"correlation"}.
+#'     \item \code{"nndescent"} Use approximate nearest neighbors with the
+#'       Nearest Neighbor Descent method (Dong et al., 2011) via the
+#'       \href{https://cran.r-project.org/package=rnndescent}{rnndescent}
+#'       package. \code{rnndescent} is not a dependency of this package: this
+#'       option is only available if you have installed \code{rnndescent}
+#'       yourself.
 #'    }
 #'   By default, if \code{X} has less than 4,096 vertices, the exact nearest
 #'   neighbors are found. Otherwise, approximate nearest neighbors are used.
@@ -209,6 +252,72 @@
 #'   larger k, the more the accurate results, but the longer the search takes.
 #'   With \code{n_trees}, determines the accuracy of the Annoy nearest neighbor
 #'   search. Only used if the \code{nn_method} is \code{"annoy"}.
+#' @param nn_args A list containing additional arguments to pass to the nearest
+#'   neighbor method. For \code{nn_method = "annoy"}, you can specify
+#'   \code{"n_trees"} and \code{"search_k"}, and these will override the
+#'   \code{n_trees} and \code{search_k} parameters.
+#'   For \code{nn_method = "hnsw"}, you may specify the following arguments:
+#'   \itemize{
+#'   \item \code{M} The maximum number of neighbors to keep for each vertex.
+#'   Reasonable values are \code{2} to \code{100}. Higher values give better
+#'   recall at the cost of more memory. Default value is \code{16}.
+#'   \item \code{ef_construction} A positive integer specifying the size of
+#'   the dynamic list used during index construction. A higher value will
+#'   provide better results at the cost of a longer time to build the index.
+#'   Default is \code{200}.
+#'   \item \code{ef} A positive integer specifying the size of the dynamic
+#'   list used during search. This cannot be smaller than \code{n_neighbors}
+#'   and cannot be higher than the number of items in the index. Default is
+#'   \code{10}.
+#'   }
+#'   For \code{nn_method = "nndescent"}, you may specify the following
+#'   arguments:
+#'   \itemize{
+#'   \item \code{n_trees} The number of trees to use in a random projection
+#'   forest to initialize the search. A larger number will give more accurate
+#'   results at the cost of a longer computation time. The default of
+#'   \code{NULL} means that the number is chosen based on the number of
+#'   observations in \code{X}.
+#'   \item \code{max_candidates} The number of potential neighbors to explore
+#'   per iteration. By default, this is set to \code{n_neighbors} or \code{60},
+#'   whichever is smaller. A larger number will give more accurate results at
+#'   the cost of a longer computation time.
+#'   \item \code{n_iters} The number of iterations to run the search. A larger
+#'   number will give more accurate results at the cost of a longer computation
+#'   time. By default, this will be chosen based on the number of observations
+#'   in \code{X}. You may also need to modify the convergence criterion
+#'   \code{delta}.
+#'   \item \code{delta} The minimum relative change in the neighbor graph
+#'   allowed before early stopping. Should be a value between 0 and 1. The
+#'   smaller the value, the smaller the amount of progress between iterations is
+#'   allowed. Default value of \code{0.001} means that at least 0.1% of the
+#'   neighbor graph must be updated at each iteration.
+#'   \item \code{init} How to initialize the nearest neighbor descent. By
+#'   default this is set to \code{"tree"} and uses a random project forest.
+#'   If you set this to \code{"rand"}, then a random selection is used. Usually
+#'   this is less accurate than using RP trees, but for high-dimensional cases,
+#'   there may be little difference in the quality of the initialization and
+#'   random initialization will be a lot faster. If you set this to
+#'   \code{"rand"}, then the \code{n_trees} parameter is ignored.
+#'   \item \code{pruning_degree_multiplier} The maximum number of edges per node
+#'   to retain in the search graph, relative to \code{n_neighbors}. A larger
+#'   value will give more accurate results at the cost of a longer computation
+#'   time. Default is \code{1.5}. This parameter only affects neighbor search
+#'   when transforming new data with \code{\link{umap_transform}}.
+#'   \item \code{epsilon} Controls the degree of the back-tracking when
+#'   traversing the search graph. Setting this to \code{0.0} will do a greedy
+#'   search with no back-tracking. A larger value will give more accurate
+#'   results at the cost of a longer computation time. Default is \code{0.1}.
+#'   This parameter only affects neighbor search when transforming new data with
+#'   \code{\link{umap_transform}}.
+#'   \item \code{max_search_fraction} Specifies the maximum fraction of the
+#'   search graph to traverse. By default, this is set to \code{1.0}, so the
+#'   entire graph (i.e. all items in \code{X}) may be visited. You may want to
+#'   set this to a smaller value if you have a very large dataset (in
+#'   conjunction with \code{epsilon}) to avoid an inefficient exhaustive search
+#'   of the data in \code{X}. This parameter only affects neighbor search when
+#'   transforming new data with \code{\link{umap_transform}}.
+#'   }
 #' @param approx_pow If \code{TRUE}, use an approximation to the power function
 #'   in the UMAP gradient, from
 #'   \url{https://martin.ankerl.com/2012/01/25/optimized-approximative-pow-in-c-and-cpp/}.
@@ -486,8 +595,10 @@
 #' iris_umap <- umap(iris30, n_neighbors = 5, min_dist = 1, spread = 5, nn_method = nn, n_epochs = 20)
 #'
 #' # Supervised dimension reduction using the 'Species' factor column
-#' iris_sumap <- umap(iris30, n_neighbors = 5, min_dist = 0.001, y = iris30$Species,
-#'                    target_weight = 0.5, n_epochs = 20)
+#' iris_sumap <- umap(iris30,
+#'   n_neighbors = 5, min_dist = 0.001, y = iris30$Species,
+#'   target_weight = 0.5, n_epochs = 20
+#' )
 #'
 #' # Calculate Petal and Sepal neighbors separately (uses intersection of the resulting sets):
 #' iris_umap <- umap(iris30, metric = list(
@@ -512,12 +623,24 @@
 #' \emph{Advances in Neural Information Processing Systems}, \emph{34}.
 #' \url{https://proceedings.neurips.cc/paper/2021/hash/2de5d16682c3c35007e4e92982f1a2ba-Abstract.html}
 #'
+#' Dong, W., Moses, C., & Li, K. (2011, March).
+#' Efficient k-nearest neighbor graph construction for generic similarity measures.
+#' In \emph{Proceedings of the 20th international conference on World Wide Web}
+#' (pp. 577-586).
+#' ACM.
+#' \doi{10.1145/1963405.1963487}.
+#'
 #' Kingma, D. P., & Ba, J. (2014).
 #' Adam: A method for stochastic optimization.
 #' \emph{arXiv preprint} \emph{arXiv}:1412.6980.
 #' \url{https://arxiv.org/abs/1412.6980}
 #'
-#' McInnes, L., & Healy, J. (2018).
+#' Malkov, Y. A., & Yashunin, D. A. (2018).
+#' Efficient and robust approximate nearest neighbor search using hierarchical
+#' navigable small world graphs.
+#' \emph{IEEE transactions on pattern analysis and machine intelligence}, \emph{42}(4), 824-836.
+#'
+#' McInnes, L., Healy, J., & Melville, J. (2018).
 #' UMAP: Uniform Manifold Approximation and Projection for Dimension Reduction
 #' \emph{arXiv preprint} \emph{arXiv}:1802.03426.
 #' \url{https://arxiv.org/abs/1802.03426}
@@ -576,7 +699,8 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                  opt_args = NULL, epoch_callback = NULL, pca_method = NULL,
                  binary_edge_weights = FALSE,
                  dens_scale = NULL,
-                 seed = NULL) {
+                 seed = NULL,
+                 nn_args = list()) {
   uwot(
     X = X, n_neighbors = n_neighbors, n_components = n_components,
     metric = metric, n_epochs = n_epochs, alpha = learning_rate, scale = scale,
@@ -607,19 +731,21 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     tmpdir = tempdir(),
     verbose = verbose,
     dens_scale = dens_scale,
-    seed = seed
+    seed = seed,
+    nn_args = nn_args
   )
 }
 
 #' Dimensionality Reduction Using t-Distributed UMAP (t-UMAP)
 #'
-#' A faster (but less flexible) version of the UMAP gradient. For more detail on
-#' UMAP, see the  \code{\link{umap}} function.
+#' A faster (but less flexible) version of the UMAP (McInnes et al, 2018)
+#' gradient. For more detail on UMAP, see the \code{\link{umap}} function.
 #'
 #' By setting the UMAP curve parameters \code{a} and \code{b} to \code{1}, you
-#' get back the Cauchy distribution as used in t-SNE and LargeVis. It also
-#' results in a substantially simplified gradient expression. This can give
-#' a speed improvement of around 50\%.
+#' get back the Cauchy distribution as used in t-SNE (van der Maaten and Hinton,
+#' 2008) and LargeVis (Tang et al., 2016). It also results in a substantially
+#' simplified gradient expression. This can give a speed improvement of around
+#' 50\%.
 #'
 #' @param X Input data. Can be a \code{\link{data.frame}}, \code{\link{matrix}},
 #'   \code{\link[stats]{dist}} object or \code{\link[Matrix]{sparseMatrix}}.
@@ -643,8 +769,8 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' @param n_components The dimension of the space to embed into. This defaults
 #'   to \code{2} to provide easy visualization, but can reasonably be set to any
 #'   integer value in the range \code{2} to \code{100}.
-#' @param metric Type of distance metric to use to find nearest neighbors. One
-#'   of:
+#' @param metric Type of distance metric to use to find nearest neighbors. For
+#'  \code{nn_method = "annoy"} this can be one of:
 #' \itemize{
 #'   \item \code{"euclidean"} (the default)
 #'   \item \code{"cosine"}
@@ -653,8 +779,36 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   \item \code{"correlation"} (a distance based on the Pearson correlation)
 #'   \item \code{"categorical"} (see below)
 #' }
-#' Only applies if \code{nn_method = "annoy"} (for \code{nn_method = "fnn"}, the
-#' distance metric is always "euclidean").
+#' For \code{nn_method = "hnsw"} this can be one of:
+#' \itemize{
+#'   \item \code{"euclidean"}
+#'   \item \code{"cosine"}
+#'   \item \code{"correlation"}
+#' }
+#' If \href{https://cran.r-project.org/package=rnndescent}{rnndescent} is
+#' installed and \code{nn_method = "nndescent"} is specified then many more
+#' metrics are avaiable, including:
+#' \itemize{
+#' \item \code{"braycurtis"}
+#' \item \code{"canberra"}
+#' \item \code{"chebyshev"}
+#' \item \code{"dice"}
+#' \item \code{"hamming"}
+#' \item \code{"hellinger"}
+#' \item \code{"jaccard"}
+#' \item \code{"jensenshannon"}
+#' \item \code{"kulsinski"}
+#' \item \code{"rogerstanimoto"}
+#' \item \code{"russellrao"}
+#' \item \code{"sokalmichener"}
+#' \item \code{"sokalsneath"}
+#' \item \code{"spearmanr"}
+#' \item \code{"symmetrickl"}
+#' \item \code{"tsss"}
+#' \item \code{"yule"}
+#' }
+#' For more details see the package documentation of \code{rnndescent}.
+#' For \code{nn_method = "fnn"}, the distance metric is always "euclidean".
 #'
 #' If \code{X} is a data frame or matrix, then multiple metrics can be
 #' specified, by passing a list to this argument, where the name of each item in
@@ -779,6 +933,21 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'       \href{https://cran.r-project.org/package=FNN}{FNN} package.
 #'     \item \code{"annoy"} Use approximate nearest neighbors via the
 #'       \href{https://cran.r-project.org/package=RcppAnnoy}{RcppAnnoy} package.
+#'     \item \code{"hnsw"} Use approximate nearest neighbors with the
+#'       Hierarchical Navigable Small World (HNSW) method (Malkov and Yashunin,
+#'       2018) via the
+#'       \href{https://cran.r-project.org/package=RcppHNSW}{RcppHNSW} package.
+#'       \code{RcppHNSW} is not a dependency of this package: this option is
+#'       only available if you have installed \code{RcppHNSW} yourself. Also,
+#'       HNSW only supports the following arguments for \code{metric} and
+#'       \code{target_metric}: \code{"euclidean"}, \code{"cosine"} and
+#'       \code{"correlation"}.
+#'     \item \code{"nndescent"} Use approximate nearest neighbors with the
+#'       Nearest Neighbor Descent method (Dong et al., 2011) via the
+#'       \href{https://cran.r-project.org/package=rnndescent}{rnndescent}
+#'       package. \code{rnndescent} is not a dependency of this package: this
+#'       option is only available if you have installed \code{rnndescent}
+#'       yourself.
 #'    }
 #'   By default, if \code{X} has less than 4,096 vertices, the exact nearest
 #'   neighbors are found. Otherwise, approximate nearest neighbors are used.
@@ -810,6 +979,120 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   larger k, the more the accurate results, but the longer the search takes.
 #'   With \code{n_trees}, determines the accuracy of the Annoy nearest neighbor
 #'   search. Only used if the \code{nn_method} is \code{"annoy"}.
+#' @param nn_args A list containing additional arguments to pass to the nearest
+#'   neighbor method. For \code{nn_method = "annoy"}, you can specify
+#'   \code{"n_trees"} and \code{"search_k"}, and these will override the
+#'   \code{n_trees} and \code{search_k} parameters.
+#'   For \code{nn_method = "hnsw"}, you may specify the following arguments:
+#'   \itemize{
+#'   \item \code{M} The maximum number of neighbors to keep for each vertex.
+#'   Reasonable values are \code{2} to \code{100}. Higher values give better
+#'   recall at the cost of more memory. Default value is \code{16}.
+#'   \item \code{ef_construction} A positive integer specifying the size of
+#'   the dynamic list used during index construction. A higher value will
+#'   provide better results at the cost of a longer time to build the index.
+#'   Default is \code{200}.
+#'   \item \code{ef} A positive integer specifying the size of the dynamic
+#'   list used during search. This cannot be smaller than \code{n_neighbors}
+#'   and cannot be higher than the number of items in the index. Default is
+#'   \code{10}.
+#'   }
+#'   For \code{nn_method = "nndescent"}, you may specify the following
+#'   arguments:
+#'   \itemize{
+#'   \item \code{n_trees} The number of trees to use in a random projection
+#'   forest to initialize the search. A larger number will give more accurate
+#'   results at the cost of a longer computation time. The default of
+#'   \code{NULL} means that the number is chosen based on the number of
+#'   observations in \code{X}.
+#'   \item \code{max_candidates} The number of potential neighbors to explore
+#'   per iteration. By default, this is set to \code{n_neighbors} or \code{60},
+#'   whichever is smaller. A larger number will give more accurate results at
+#'   the cost of a longer computation time.
+#'   \item \code{n_iters} The number of iterations to run the search. A larger
+#'   number will give more accurate results at the cost of a longer computation
+#'   time. By default, this will be chosen based on the number of observations
+#'   in \code{X}. You may also need to modify the convergence criterion
+#'   \code{delta}.
+#'   \item \code{delta} The minimum relative change in the neighbor graph
+#'   allowed before early stopping. Should be a value between 0 and 1. The
+#'   smaller the value, the smaller the amount of progress between iterations is
+#'   allowed. Default value of \code{0.001} means that at least 0.1% of the
+#'   neighbor graph must be updated at each iteration.
+#'   \item \code{init} How to initialize the nearest neighbor descent. By
+#'   default this is set to \code{"tree"} and uses a random project forest.
+#'   If you set this to \code{"rand"}, then a random selection is used. Usually
+#'   this is less accurate than using RP trees, but for high-dimensional cases,
+#'   there may be little difference in the quality of the initialization and
+#'   random initialization will be a lot faster. If you set this to
+#'   \code{"rand"}, then the \code{n_trees} parameter is ignored.
+#'   \item \code{pruning_degree_multiplier} The maximum number of edges per node
+#'   to retain in the search graph, relative to \code{n_neighbors}. A larger
+#'   value will give more accurate results at the cost of a longer computation
+#'   time. Default is \code{1.5}. This parameter only affects neighbor search
+#'   when transforming new data with \code{\link{umap_transform}}.
+#'   \item \code{epsilon} Controls the degree of the back-tracking when
+#'   traversing the search graph. Setting this to \code{0.0} will do a greedy
+#'   search with no back-tracking. A larger value will give more accurate
+#'   results at the cost of a longer computation time. Default is \code{0.1}.
+#'   This parameter only affects neighbor search when transforming new data with
+#'   \code{\link{umap_transform}}.
+#'   \item \code{max_search_fraction} Specifies the maximum fraction of the
+#'   search graph to traverse. By default, this is set to \code{1.0}, so the
+#'   entire graph (i.e. all items in \code{X}) may be visited. You may want to
+#'   set this to a smaller value if you have a very large dataset (in
+#'   conjunction with \code{epsilon}) to avoid an inefficient exhaustive search
+#'   of the data in \code{X}. This parameter only affects neighbor search when
+#'   transforming new data with \code{\link{umap_transform}}.
+#'   }
+#'   For \code{nn_method = "nndescent"}, you may specify the following
+#'   arguments:
+#'   \itemize{
+#'   \item \code{n_trees} The number of trees to use in a random projection
+#'   forest to initialize the search. A larger number will give more accurate
+#'   results at the cost of a longer computation time. The default of
+#'   \code{NULL} means that the number is chosen based on the number of
+#'   observations in \code{X}.
+#'   \item \code{max_candidates} The number of potential neighbors to explore
+#'   per iteration. By default, this is set to \code{n_neighbors} or \code{60},
+#'   whichever is smaller. A larger number will give more accurate results at
+#'   the cost of a longer computation time.
+#'   \item \code{n_iters} The number of iterations to run the search. A larger
+#'   number will give more accurate results at the cost of a longer computation
+#'   time. By default, this will be chosen based on the number of observations
+#'   in \code{X}. You may also need to modify the convergence criterion
+#'   \code{delta}.
+#'   \item \code{delta} The minimum relative change in the neighbor graph
+#'   allowed before early stopping. Should be a value between 0 and 1. The
+#'   smaller the value, the smaller the amount of progress between iterations is
+#'   allowed. Default value of \code{0.001} means that at least 0.1% of the
+#'   neighbor graph must be updated at each iteration.
+#'   \item \code{init} How to initialize the nearest neighbor descent. By
+#'   default this is set to \code{"tree"} and uses a random project forest. If
+#'   you set this to \code{"rand"}, then a random selection is used. Usually
+#'   this is less accurate than using RP trees, but for high-dimensional cases,
+#'   there may be little difference in the quality of the initialization and
+#'   random initialization will be a lot faster. If you set this to
+#'   \code{"rand"}, then the \code{n_trees} parameter is ignored.
+#'   \item \code{pruning_degree_multiplier} The maximum number of edges per node
+#'   to retain in the search graph, relative to \code{n_neighbors}. A larger
+#'   value will give more accurate results at the cost of a longer computation
+#'   time. Default is \code{1.5}. This parameter only affects neighbor search
+#'   when transforming new data with \code{\link{umap_transform}}.
+#'   \item \code{epsilon} Controls the degree of the back-tracking when
+#'   traversing the search graph. Setting this to \code{0.0} will do a greedy
+#'   search with no back-tracking. A larger value will give more accurate
+#'   results at the cost of a longer computation time. Default is \code{0.1}.
+#'   This parameter only affects neighbor search when transforming new data with
+#'   \code{\link{umap_transform}}.
+#'   \item \code{max_search_fraction} Specifies the maximum fraction of the
+#'   search graph to traverse. By default, this is set to \code{1.0}, so the
+#'   entire graph (i.e. all items in \code{X}) may be visited. You may want to
+#'   set this to a smaller value if you have a very large dataset (in
+#'   conjunction with \code{epsilon}) to avoid an inefficient exhaustive search
+#'   of the data in \code{X}. This parameter only affects neighbor search when
+#'   transforming new data with \code{\link{umap_transform}}.
+#'   }
 #' @param y Optional target data for supervised dimension reduction. Can be a
 #' vector, matrix or data frame. Use the \code{target_metric} parameter to
 #' specify the metrics to use, using the same syntax as \code{metric}. Usually
@@ -1061,6 +1344,68 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   specifying \code{ret_model}, \code{ret_nn} and \code{ret_extra}.
 #' @examples
 #' iris_tumap <- tumap(iris, n_neighbors = 50, learning_rate = 0.5)
+#'
+#' @references
+#' Belkin, M., & Niyogi, P. (2002).
+#' Laplacian eigenmaps and spectral techniques for embedding and clustering.
+#' In \emph{Advances in neural information processing systems}
+#' (pp. 585-591).
+#' \url{http://papers.nips.cc/paper/1961-laplacian-eigenmaps-and-spectral-techniques-for-embedding-and-clustering.pdf}
+#'
+#' Böhm, J. N., Berens, P., & Kobak, D. (2020).
+#' A unifying perspective on neighbor embeddings along the attraction-repulsion spectrum.
+#' \emph{arXiv preprint} \emph{arXiv:2007.08902}.
+#' \url{https://arxiv.org/abs/2007.08902}
+#'
+#' Damrich, S., & Hamprecht, F. A. (2021).
+#' On UMAP's true loss function.
+#' \emph{Advances in Neural Information Processing Systems}, \emph{34}.
+#' \url{https://proceedings.neurips.cc/paper/2021/hash/2de5d16682c3c35007e4e92982f1a2ba-Abstract.html}
+#'
+#' Dong, W., Moses, C., & Li, K. (2011, March).
+#' Efficient k-nearest neighbor graph construction for generic similarity measures.
+#' In \emph{Proceedings of the 20th international conference on World Wide Web}
+#' (pp. 577-586).
+#' ACM.
+#' \doi{10.1145/1963405.1963487}.
+#'
+#' Kingma, D. P., & Ba, J. (2014).
+#' Adam: A method for stochastic optimization.
+#' \emph{arXiv preprint} \emph{arXiv}:1412.6980.
+#' \url{https://arxiv.org/abs/1412.6980}
+#'
+#' Malkov, Y. A., & Yashunin, D. A. (2018).
+#' Efficient and robust approximate nearest neighbor search using hierarchical
+#' navigable small world graphs.
+#' \emph{IEEE transactions on pattern analysis and machine intelligence}, \emph{42}(4), 824-836.
+#'
+#' McInnes, L., Healy, J., & Melville, J. (2018).
+#' UMAP: Uniform Manifold Approximation and Projection for Dimension Reduction
+#' \emph{arXiv preprint} \emph{arXiv}:1802.03426.
+#' \url{https://arxiv.org/abs/1802.03426}
+#'
+#' O’Neill, M. E. (2014).
+#' \emph{PCG: A family of simple fast space-efficient statistically good
+#' algorithms for random number generation}
+#' (Report No. HMC-CS-2014-0905). Harvey Mudd College.
+#'
+#' Tang, J., Liu, J., Zhang, M., & Mei, Q. (2016, April).
+#' Visualizing large-scale and high-dimensional data.
+#' In \emph{Proceedings of the 25th International Conference on World Wide Web}
+#' (pp. 287-297).
+#' International World Wide Web Conferences Steering Committee.
+#' \url{https://arxiv.org/abs/1602.00370}
+#'
+#' Van der Maaten, L., & Hinton, G. (2008).
+#' Visualizing data using t-SNE.
+#' \emph{Journal of Machine Learning Research}, \emph{9} (2579-2605).
+#' \url{https://www.jmlr.org/papers/v9/vandermaaten08a.html}
+#'
+#' Wang, Y., Huang, H., Rudin, C., & Shaposhnik, Y. (2021).
+#' Understanding How Dimension Reduction Tools Work: An Empirical Approach to Deciphering t-SNE, UMAP, TriMap, and PaCMAP for Data Visualization.
+#' \emph{Journal of Machine Learning Research}, \emph{22}(201), 1-73.
+#' \url{https://www.jmlr.org/papers/v22/20-1061.html}
+#'
 #' @export
 tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                   n_epochs = NULL,
@@ -1087,7 +1432,8 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                   opt_args = NULL, epoch_callback = NULL,
                   pca_method = NULL,
                   binary_edge_weights = FALSE,
-                  seed = NULL) {
+                  seed = NULL,
+                  nn_args = list()) {
   uwot(
     X = X, n_neighbors = n_neighbors, n_components = n_components,
     metric = metric,
@@ -1117,7 +1463,8 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     binary_edge_weights = binary_edge_weights,
     seed = seed,
     tmpdir = tmpdir,
-    verbose = verbose
+    verbose = verbose,
+    nn_args = nn_args
   )
 }
 
@@ -1169,8 +1516,8 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' @param n_components The dimension of the space to embed into. This defaults
 #'   to \code{2} to provide easy visualization, but can reasonably be set to any
 #'   integer value in the range \code{2} to \code{100}.
-#' @param metric Type of distance metric to use to find nearest neighbors. One
-#'   of:
+#' @param metric Type of distance metric to use to find nearest neighbors. For
+#'  \code{nn_method = "annoy"} this can be one of:
 #' \itemize{
 #'   \item \code{"euclidean"} (the default)
 #'   \item \code{"cosine"}
@@ -1179,8 +1526,36 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   \item \code{"correlation"} (a distance based on the Pearson correlation)
 #'   \item \code{"categorical"} (see below)
 #' }
-#' Only applies if \code{nn_method = "annoy"} (for \code{nn_method = "fnn"}, the
-#' distance metric is always "euclidean").
+#' For \code{nn_method = "hnsw"} this can be one of:
+#' \itemize{
+#'   \item \code{"euclidean"}
+#'   \item \code{"cosine"}
+#'   \item \code{"correlation"}
+#' }
+#' If \href{https://cran.r-project.org/package=rnndescent}{rnndescent} is
+#' installed and \code{nn_method = "nndescent"} is specified then many more
+#' metrics are avaiable, including:
+#' \itemize{
+#' \item \code{"braycurtis"}
+#' \item \code{"canberra"}
+#' \item \code{"chebyshev"}
+#' \item \code{"dice"}
+#' \item \code{"hamming"}
+#' \item \code{"hellinger"}
+#' \item \code{"jaccard"}
+#' \item \code{"jensenshannon"}
+#' \item \code{"kulsinski"}
+#' \item \code{"rogerstanimoto"}
+#' \item \code{"russellrao"}
+#' \item \code{"sokalmichener"}
+#' \item \code{"sokalsneath"}
+#' \item \code{"spearmanr"}
+#' \item \code{"symmetrickl"}
+#' \item \code{"tsss"}
+#' \item \code{"yule"}
+#' }
+#' For more details see the package documentation of \code{rnndescent}.
+#' For \code{nn_method = "fnn"}, the distance metric is always "euclidean".
 #'
 #' If \code{X} is a data frame or matrix, then multiple metrics can be
 #' specified, by passing a list to this argument, where the name of each item in
@@ -1291,6 +1666,20 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'       \href{https://cran.r-project.org/package=FNN}{FNN} package.
 #'     \item \code{"annoy"} Use approximate nearest neighbors via the
 #'       \href{https://cran.r-project.org/package=RcppAnnoy}{RcppAnnoy} package.
+#'     \item \code{"hnsw"} Use approximate nearest neighbors with the
+#'       Hierarchical Navigable Small World (HNSW) method (Malkov and Yashunin,
+#'       2018) via the
+#'       \href{https://cran.r-project.org/package=RcppHNSW}{RcppHNSW} package.
+#'       \code{RcppHNSW} is not a dependency of this package: this option is
+#'       only available if you have installed \code{RcppHNSW} yourself. Also,
+#'       HNSW only supports the following arguments for \code{metric}:
+#'       \code{"euclidean"}, \code{"cosine"} and \code{"correlation"}.
+#'     \item \code{"nndescent"} Use approximate nearest neighbors with the
+#'       Nearest Neighbor Descent method (Dong et al., 2011) via the
+#'       \href{https://cran.r-project.org/package=rnndescent}{rnndescent}
+#'       package. \code{rnndescent} is not a dependency of this package: this
+#'       option is only available if you have installed \code{rnndescent}
+#'       yourself.
 #'    }
 #'   By default, if \code{X} has less than 4,096 vertices, the exact nearest
 #'   neighbors are found. Otherwise, approximate nearest neighbors are used.
@@ -1318,6 +1707,54 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   larger k, the more the accurate results, but the longer the search takes.
 #'   With \code{n_trees}, determines the accuracy of the Annoy nearest neighbor
 #'   search. Only used if the \code{nn_method} is \code{"annoy"}.
+#' @param nn_args A list containing additional arguments to pass to the nearest
+#'   neighbor method. For \code{nn_method = "annoy"}, you can specify
+#'   \code{"n_trees"} and \code{"search_k"}, and these will override the
+#'   \code{n_trees} and \code{search_k} parameters.
+#'   For \code{nn_method = "hnsw"}, you may specify the following arguments:
+#'   \itemize{
+#'   \item \code{M} The maximum number of neighbors to keep for each vertex.
+#'   Reasonable values are \code{2} to \code{100}. Higher values give better
+#'   recall at the cost of more memory. Default value is \code{16}.
+#'   \item \code{ef_construction} A positive integer specifying the size of
+#'   the dynamic list used during index construction. A higher value will
+#'   provide better results at the cost of a longer time to build the index.
+#'   Default is \code{200}.
+#'   \item \code{ef} A positive integer specifying the size of the dynamic
+#'   list used during search. This cannot be smaller than \code{n_neighbors}
+#'   and cannot be higher than the number of items in the index. Default is
+#'   \code{10}.
+#'   }
+#'   For \code{nn_method = "nndescent"}, you may specify the following
+#'   arguments:
+#'   \itemize{
+#'   \item \code{n_trees} The number of trees to use in a random projection
+#'   forest to initialize the search. A larger number will give more accurate
+#'   results at the cost of a longer computation time. The default of
+#'   \code{NULL} means that the number is chosen based on the number of
+#'   observations in \code{X}.
+#'   \item \code{max_candidates} The number of potential neighbors to explore
+#'   per iteration. By default, this is set to \code{n_neighbors} or \code{60},
+#'   whichever is smaller. A larger number will give more accurate results at
+#'   the cost of a longer computation time.
+#'   \item \code{n_iters} The number of iterations to run the search. A larger
+#'   number will give more accurate results at the cost of a longer computation
+#'   time. By default, this will be chosen based on the number of observations
+#'   in \code{X}. You may also need to modify the convergence criterion
+#'   \code{delta}.
+#'   \item \code{delta} The minimum relative change in the neighbor graph
+#'   allowed before early stopping. Should be a value between 0 and 1. The
+#'   smaller the value, the smaller the amount of progress between iterations is
+#'   allowed. Default value of \code{0.001} means that at least 0.1% of the
+#'   neighbor graph must be updated at each iteration.
+#'   \item \code{init} How to initialize the nearest neighbor descent. By
+#'   default this is set to \code{"tree"} and uses a random project forest.
+#'   If you set this to \code{"rand"}, then a random selection is used. Usually
+#'   this is less accurate than using RP trees, but for high-dimensional cases,
+#'   there may be little difference in the quality of the initialization and
+#'   random initialization will be a lot faster. If you set this to
+#'   \code{"rand"}, then the \code{n_trees} parameter is ignored.
+#'   }
 #' @param n_threads Number of threads to use (except during stochastic gradient
 #'   descent). Default is half the number of concurrent threads supported by the
 #'   system. For nearest neighbor search, only applies if
@@ -1492,18 +1929,6 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   }
 #'   The returned list contains the combined data from any combination of
 #'   specifying \code{ret_nn} and \code{ret_extra}.
-#' @references
-#' Tang, J., Liu, J., Zhang, M., & Mei, Q. (2016, April).
-#' Visualizing large-scale and high-dimensional data.
-#' In \emph{Proceedings of the 25th International Conference on World Wide Web}
-#' (pp. 287-297).
-#' International World Wide Web Conferences Steering Committee.
-#' \url{https://arxiv.org/abs/1602.00370}
-#'
-#' Lee, J. A., Peluffo-Ordóñez, D. H., & Verleysen, M. (2015).
-#' Multi-scale similarities in stochastic neighbour embedding: Reducing
-#' dimensionality while preserving both local and global structure.
-#' \emph{Neurocomputing}, \emph{169}, 246-261.
 #'
 #' @examples
 #' # Default number of epochs is much larger than for UMAP, assumes random
@@ -1514,6 +1939,73 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #'   perplexity = 50, learning_rate = 0.5,
 #'   init = "random", n_epochs = 20
 #' )
+#'
+#' @references
+#' Belkin, M., & Niyogi, P. (2002).
+#' Laplacian eigenmaps and spectral techniques for embedding and clustering.
+#' In \emph{Advances in neural information processing systems}
+#' (pp. 585-591).
+#' \url{http://papers.nips.cc/paper/1961-laplacian-eigenmaps-and-spectral-techniques-for-embedding-and-clustering.pdf}
+#'
+#' Böhm, J. N., Berens, P., & Kobak, D. (2020).
+#' A unifying perspective on neighbor embeddings along the attraction-repulsion spectrum.
+#' \emph{arXiv preprint} \emph{arXiv:2007.08902}.
+#' \url{https://arxiv.org/abs/2007.08902}
+#'
+#' Damrich, S., & Hamprecht, F. A. (2021).
+#' On UMAP's true loss function.
+#' \emph{Advances in Neural Information Processing Systems}, \emph{34}.
+#' \url{https://proceedings.neurips.cc/paper/2021/hash/2de5d16682c3c35007e4e92982f1a2ba-Abstract.html}
+#'
+#' Dong, W., Moses, C., & Li, K. (2011, March).
+#' Efficient k-nearest neighbor graph construction for generic similarity measures.
+#' In \emph{Proceedings of the 20th international conference on World Wide Web}
+#' (pp. 577-586).
+#' ACM.
+#' \doi{10.1145/1963405.1963487}.
+#'
+#' Kingma, D. P., & Ba, J. (2014).
+#' Adam: A method for stochastic optimization.
+#' \emph{arXiv preprint} \emph{arXiv}:1412.6980.
+#' \url{https://arxiv.org/abs/1412.6980}
+#'
+#' Lee, J. A., Peluffo-Ordóñez, D. H., & Verleysen, M. (2015).
+#' Multi-scale similarities in stochastic neighbour embedding: Reducing
+#' dimensionality while preserving both local and global structure.
+#' \emph{Neurocomputing}, \emph{169}, 246-261.
+#'
+#' Malkov, Y. A., & Yashunin, D. A. (2018).
+#' Efficient and robust approximate nearest neighbor search using hierarchical
+#' navigable small world graphs.
+#' \emph{IEEE transactions on pattern analysis and machine intelligence}, \emph{42}(4), 824-836.
+#'
+#' McInnes, L., Healy, J., & Melville, J. (2018).
+#' UMAP: Uniform Manifold Approximation and Projection for Dimension Reduction
+#' \emph{arXiv preprint} \emph{arXiv}:1802.03426.
+#' \url{https://arxiv.org/abs/1802.03426}
+#'
+#' O’Neill, M. E. (2014).
+#' \emph{PCG: A family of simple fast space-efficient statistically good
+#' algorithms for random number generation}
+#' (Report No. HMC-CS-2014-0905). Harvey Mudd College.
+#'
+#' Tang, J., Liu, J., Zhang, M., & Mei, Q. (2016, April).
+#' Visualizing large-scale and high-dimensional data.
+#' In \emph{Proceedings of the 25th International Conference on World Wide Web}
+#' (pp. 287-297).
+#' International World Wide Web Conferences Steering Committee.
+#' \url{https://arxiv.org/abs/1602.00370}
+#'
+#' Van der Maaten, L., & Hinton, G. (2008).
+#' Visualizing data using t-SNE.
+#' \emph{Journal of Machine Learning Research}, \emph{9} (2579-2605).
+#' \url{https://www.jmlr.org/papers/v9/vandermaaten08a.html}
+#'
+#' Wang, Y., Huang, H., Rudin, C., & Shaposhnik, Y. (2021).
+#' Understanding How Dimension Reduction Tools Work: An Empirical Approach to Deciphering t-SNE, UMAP, TriMap, and PaCMAP for Data Visualization.
+#' \emph{Journal of Machine Learning Research}, \emph{22}(201), 1-73.
+#' \url{https://www.jmlr.org/papers/v22/20-1061.html}
+#'
 #' @export
 lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
                   n_components = 2, metric = "euclidean", n_epochs = -1,
@@ -1536,7 +2028,8 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
                   batch = FALSE,
                   opt_args = NULL, epoch_callback = NULL,
                   pca_method = NULL,
-                  binary_edge_weights = FALSE) {
+                  binary_edge_weights = FALSE,
+                  nn_args = list()) {
   uwot(X,
     n_neighbors = n_neighbors, n_components = n_components,
     metric = metric,
@@ -1560,7 +2053,8 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
     epoch_callback = epoch_callback,
     tmpdir = tmpdir,
     binary_edge_weights = binary_edge_weights,
-    verbose = verbose
+    verbose = verbose,
+    nn_args = list()
   )
 }
 
@@ -1595,8 +2089,8 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
 #'   result in more global views of the manifold, while smaller values result in
 #'   more local data being preserved. In general values should be in the range
 #'   \code{2} to \code{100}.
-#' @param metric Type of distance metric to use to find nearest neighbors. One
-#'   of:
+#' @param metric Type of distance metric to use to find nearest neighbors. For
+#'  \code{nn_method = "annoy"} this can be one of:
 #' \itemize{
 #'   \item \code{"euclidean"} (the default)
 #'   \item \code{"cosine"}
@@ -1605,8 +2099,36 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
 #'   \item \code{"correlation"} (a distance based on the Pearson correlation)
 #'   \item \code{"categorical"} (see below)
 #' }
-#' Only applies if \code{nn_method = "annoy"} (for \code{nn_method = "fnn"}, the
-#' distance metric is always "euclidean").
+#' For \code{nn_method = "hnsw"} this can be one of:
+#' \itemize{
+#'   \item \code{"euclidean"}
+#'   \item \code{"cosine"}
+#'   \item \code{"correlation"}
+#' }
+#' If \href{https://cran.r-project.org/package=rnndescent}{rnndescent} is
+#' installed and \code{nn_method = "nndescent"} is specified then many more
+#' metrics are avaiable, including:
+#' \itemize{
+#' \item \code{"braycurtis"}
+#' \item \code{"canberra"}
+#' \item \code{"chebyshev"}
+#' \item \code{"dice"}
+#' \item \code{"hamming"}
+#' \item \code{"hellinger"}
+#' \item \code{"jaccard"}
+#' \item \code{"jensenshannon"}
+#' \item \code{"kulsinski"}
+#' \item \code{"rogerstanimoto"}
+#' \item \code{"russellrao"}
+#' \item \code{"sokalmichener"}
+#' \item \code{"sokalsneath"}
+#' \item \code{"spearmanr"}
+#' \item \code{"symmetrickl"}
+#' \item \code{"tsss"}
+#' \item \code{"yule"}
+#' }
+#' For more details see the package documentation of \code{rnndescent}.
+#' For \code{nn_method = "fnn"}, the distance metric is always "euclidean".
 #'
 #' If \code{X} is a data frame or matrix, then multiple metrics can be
 #' specified, by passing a list to this argument, where the name of each item in
@@ -1664,6 +2186,21 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
 #'       \href{https://cran.r-project.org/package=FNN}{FNN} package.
 #'     \item \code{"annoy"} Use approximate nearest neighbors via the
 #'       \href{https://cran.r-project.org/package=RcppAnnoy}{RcppAnnoy} package.
+#'     \item \code{"hnsw"} Use approximate nearest neighbors with the
+#'       Hierarchical Navigable Small World (HNSW) method (Malkov and Yashunin,
+#'       2018) via the
+#'       \href{https://cran.r-project.org/package=RcppHNSW}{RcppHNSW} package.
+#'       \code{RcppHNSW} is not a dependency of this package: this option is
+#'       only available if you have installed \code{RcppHNSW} yourself. Also,
+#'       HNSW only supports the following arguments for \code{metric} and
+#'       \code{target_metric}: \code{"euclidean"}, \code{"cosine"} and
+#'       \code{"correlation"}.
+#'     \item \code{"nndescent"} Use approximate nearest neighbors with the
+#'       Nearest Neighbor Descent method (Dong et al., 2011) via the
+#'       \href{https://cran.r-project.org/package=rnndescent}{rnndescent}
+#'       package. \code{rnndescent} is not a dependency of this package: this
+#'       option is only available if you have installed \code{rnndescent}
+#'       yourself.
 #'    }
 #'   By default, if \code{X} has less than 4,096 vertices, the exact nearest
 #'   neighbors are found. Otherwise, approximate nearest neighbors are used.
@@ -1695,6 +2232,72 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
 #'   larger k, the more the accurate results, but the longer the search takes.
 #'   With \code{n_trees}, determines the accuracy of the Annoy nearest neighbor
 #'   search. Only used if the \code{nn_method} is \code{"annoy"}.
+#' @param nn_args A list containing additional arguments to pass to the nearest
+#'   neighbor method. For \code{nn_method = "annoy"}, you can specify
+#'   \code{"n_trees"} and \code{"search_k"}, and these will override the
+#'   \code{n_trees} and \code{search_k} parameters.
+#'   For \code{nn_method = "hnsw"}, you may specify the following arguments:
+#'   \itemize{
+#'   \item \code{M} The maximum number of neighbors to keep for each vertex.
+#'   Reasonable values are \code{2} to \code{100}. Higher values give better
+#'   recall at the cost of more memory. Default value is \code{16}.
+#'   \item \code{ef_construction} A positive integer specifying the size of
+#'   the dynamic list used during index construction. A higher value will
+#'   provide better results at the cost of a longer time to build the index.
+#'   Default is \code{200}.
+#'   \item \code{ef} A positive integer specifying the size of the dynamic
+#'   list used during search. This cannot be smaller than \code{n_neighbors}
+#'   and cannot be higher than the number of items in the index. Default is
+#'   \code{10}.
+#'   }
+#'   For \code{nn_method = "nndescent"}, you may specify the following
+#'   arguments:
+#'   \itemize{
+#'   \item \code{n_trees} The number of trees to use in a random projection
+#'   forest to initialize the search. A larger number will give more accurate
+#'   results at the cost of a longer computation time. The default of
+#'   \code{NULL} means that the number is chosen based on the number of
+#'   observations in \code{X}.
+#'   \item \code{max_candidates} The number of potential neighbors to explore
+#'   per iteration. By default, this is set to \code{n_neighbors} or \code{60},
+#'   whichever is smaller. A larger number will give more accurate results at
+#'   the cost of a longer computation time.
+#'   \item \code{n_iters} The number of iterations to run the search. A larger
+#'   number will give more accurate results at the cost of a longer computation
+#'   time. By default, this will be chosen based on the number of observations
+#'   in \code{X}. You may also need to modify the convergence criterion
+#'   \code{delta}.
+#'   \item \code{delta} The minimum relative change in the neighbor graph
+#'   allowed before early stopping. Should be a value between 0 and 1. The
+#'   smaller the value, the smaller the amount of progress between iterations is
+#'   allowed. Default value of \code{0.001} means that at least 0.1% of the
+#'   neighbor graph must be updated at each iteration.
+#'   \item \code{init} How to initialize the nearest neighbor descent. By
+#'   default this is set to \code{"tree"} and uses a random project forest.
+#'   If you set this to \code{"rand"}, then a random selection is used. Usually
+#'   this is less accurate than using RP trees, but for high-dimensional cases,
+#'   there may be little difference in the quality of the initialization and
+#'   random initialization will be a lot faster. If you set this to
+#'   \code{"rand"}, then the \code{n_trees} parameter is ignored.
+#'   \item \code{pruning_degree_multiplier} The maximum number of edges per node
+#'   to retain in the search graph, relative to \code{n_neighbors}. A larger
+#'   value will give more accurate results at the cost of a longer computation
+#'   time. Default is \code{1.5}. This parameter only affects neighbor search
+#'   when transforming new data with \code{\link{umap_transform}}.
+#'   \item \code{epsilon} Controls the degree of the back-tracking when
+#'   traversing the search graph. Setting this to \code{0.0} will do a greedy
+#'   search with no back-tracking. A larger value will give more accurate
+#'   results at the cost of a longer computation time. Default is \code{0.1}.
+#'   This parameter only affects neighbor search when transforming new data with
+#'   \code{\link{umap_transform}}.
+#'   \item \code{max_search_fraction} Specifies the maximum fraction of the
+#'   search graph to traverse. By default, this is set to \code{1.0}, so the
+#'   entire graph (i.e. all items in \code{X}) may be visited. You may want to
+#'   set this to a smaller value if you have a very large dataset (in
+#'   conjunction with \code{epsilon}) to avoid an inefficient exhaustive search
+#'   of the data in \code{X}. This parameter only affects neighbor search when
+#'   transforming new data with \code{\link{umap_transform}}.
+#'   }
 #' @param perplexity Used only if \code{method = "largevis"}. Controls the size
 #'   of the local neighborhood used for manifold approximation. Should be a
 #'   value between 1 and one less than the number of items in \code{X}. If
@@ -1865,14 +2468,30 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
 #' # to control neighborhood size. Use ret_extra = "nn" to return nearest
 #' # neighbor data as well as the similarity graph. Return value is a list
 #' # containing similarity_graph' and 'nn' items.
-#' iris30_lv_graph <- similarity_graph(iris30, perplexity = 10,
-#'                                     method = "largevis", ret_extra = "nn")
+#' iris30_lv_graph <- similarity_graph(iris30,
+#'   perplexity = 10,
+#'   method = "largevis", ret_extra = "nn"
+#' )
 #' # If you have the neighbor information you don't need the original data
-#' iris30_lv_graph_nn <- similarity_graph(nn_method = iris30_lv_graph$nn,
-#'                                        perplexity = 10, method = "largevis")
+#' iris30_lv_graph_nn <- similarity_graph(
+#'   nn_method = iris30_lv_graph$nn,
+#'   perplexity = 10, method = "largevis"
+#' )
 #' all(iris30_lv_graph_nn == iris30_lv_graph$similarity_graph)
 #'
 #' @references
+#' Dong, W., Moses, C., & Li, K. (2011, March).
+#' Efficient k-nearest neighbor graph construction for generic similarity measures.
+#' In \emph{Proceedings of the 20th international conference on World Wide Web}
+#' (pp. 577-586).
+#' ACM.
+#' \doi{10.1145/1963405.1963487}.
+#'
+#' Malkov, Y. A., & Yashunin, D. A. (2018).
+#' Efficient and robust approximate nearest neighbor search using hierarchical
+#' navigable small world graphs.
+#' \emph{IEEE transactions on pattern analysis and machine intelligence}, \emph{42}(4), 824-836.
+#'
 #' McInnes, L., Healy, J., & Melville, J. (2018).
 #' UMAP: Uniform Manifold Approximation and Projection for Dimension Reduction
 #' \emph{arXiv preprint} \emph{arXiv}:1802.03426.
@@ -1904,13 +2523,13 @@ similarity_graph <- function(X = NULL, n_neighbors = NULL, metric = "euclidean",
                              tmpdir = tempdir(),
                              verbose = getOption("verbose", TRUE),
                              pca_method = NULL,
-                             binary_edge_weights = FALSE) {
+                             binary_edge_weights = FALSE,
+                             nn_args = list()) {
   if (is.null(n_neighbors)) {
     if (method == "largevis") {
       n_neighbors <- perplexity * 3
       scale <- "maxabs"
-    }
-    else {
+    } else {
       n_neighbors <- 15
       scale <- FALSE
     }
@@ -1938,7 +2557,8 @@ similarity_graph <- function(X = NULL, n_neighbors = NULL, metric = "euclidean",
     ret_localr = "localr" %in% ret_extra,
     binary_edge_weights = binary_edge_weights,
     tmpdir = tempdir(),
-    verbose = verbose
+    verbose = verbose,
+    nn_args = nn_args
   )
 
   res <- list()
@@ -1949,8 +2569,7 @@ similarity_graph <- function(X = NULL, n_neighbors = NULL, metric = "euclidean",
     }
     if (name == "P" || name == "fgraph") {
       res$similarity_graph <- uwot_res[[name]]
-    }
-    else {
+    } else {
       res[[name]] <- uwot_res[[name]]
     }
   }
@@ -2194,6 +2813,11 @@ similarity_graph <- function(X = NULL, n_neighbors = NULL, metric = "euclidean",
 #' \emph{arXiv preprint} \emph{arXiv}:1802.03426.
 #' \url{https://arxiv.org/abs/1802.03426}
 #'
+#' O’Neill, M. E. (2014).
+#' \emph{PCG: A family of simple fast space-efficient statistically good
+#' algorithms for random number generation}
+#' (Report No. HMC-CS-2014-0905). Harvey Mudd College.
+#'
 #' Tang, J., Liu, J., Zhang, M., & Mei, Q. (2016, April).
 #' Visualizing large-scale and high-dimensional data.
 #' In \emph{Proceedings of the 25th International Conference on World Wide Web}
@@ -2247,8 +2871,7 @@ optimize_graph_layout <-
       n_vertices <- nrow(graph)
       if (n_vertices <= 10000) {
         n_epochs <- 500
-      }
-      else {
+      } else {
         n_epochs <- 200
       }
     }
@@ -2299,8 +2922,8 @@ optimize_graph_layout <-
 #'
 #' # Form two different "views" of the same data
 #' iris30 <- iris[c(1:10, 51:60, 101:110), ]
-#' iris_sg12 = similarity_graph(iris30[, 1:2], n_neighbors = 5)
-#' iris_sg34 = similarity_graph(iris30[, 3:4], n_neighbors = 5)
+#' iris_sg12 <- similarity_graph(iris30[, 1:2], n_neighbors = 5)
+#' iris_sg34 <- similarity_graph(iris30[, 3:4], n_neighbors = 5)
 #'
 #' # Combine the two representations into one
 #' iris_combined <- simplicial_set_union(iris_sg12, iris_sg34)
@@ -2370,8 +2993,8 @@ simplicial_set_union <-
 #'
 #' # Form two different "views" of the same data
 #' iris30 <- iris[c(1:10, 51:60, 101:110), ]
-#' iris_sg12 = similarity_graph(iris30[, 1:2], n_neighbors = 5)
-#' iris_sg34 = similarity_graph(iris30[, 3:4], n_neighbors = 5)
+#' iris_sg12 <- similarity_graph(iris30[, 1:2], n_neighbors = 5)
+#' iris_sg34 <- similarity_graph(iris30[, 3:4], n_neighbors = 5)
 #'
 #' # Combine the two representations into one
 #' iris_combined <- simplicial_set_intersect(iris_sg12, iris_sg34)
@@ -2393,9 +3016,11 @@ simplicial_set_intersect <- function(x, y, weight = 0.5, n_threads = NULL,
   if (!all(dim(x) == dim(y))) {
     stop("x and y must have identical dimensions")
   }
-  set_intersect(A = x, B = y, weight = weight, reset_connectivity = TRUE,
-                reset_local_metric = TRUE, n_threads = n_threads,
-                verbose = verbose)
+  set_intersect(
+    A = x, B = y, weight = weight, reset_connectivity = TRUE,
+    reset_local_metric = TRUE, n_threads = n_threads,
+    verbose = verbose
+  )
 }
 
 # Function that does all the real work
@@ -2431,7 +3056,9 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                  binary_edge_weights = FALSE,
                  dens_scale = NULL,
                  is_similarity_graph = FALSE,
-                 seed = NULL) {
+                 seed = NULL,
+                 nn_args = list(),
+                 sparse_X_is_distance_matrix = TRUE) {
   if (is.null(n_threads)) {
     n_threads <- default_num_threads()
   }
@@ -2443,8 +3070,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       a <- ab_res[1]
       b <- ab_res[2]
       tsmessage("UMAP embedding parameters a = ", formatC(a), " b = ", formatC(b))
-    }
-    else {
+    } else {
       # set min_dist and spread to NULL so if ret_model = TRUE, their default
       # values are not mistaken for having been used for anything
       min_dist <- NULL
@@ -2488,7 +3114,8 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
   }
   pca_method <-
     match.arg(pca_method,
-              choices = c("irlba", "svdr", "bigstatsr", "svd", "auto"))
+      choices = c("irlba", "svdr", "bigstatsr", "svd", "auto")
+    )
 
   if (fast_sgd) {
     n_sgd_threads <- "auto"
@@ -2523,6 +3150,30 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     set.seed(seed)
   }
 
+  if (is.character(nn_method) && nn_method == "hnsw") {
+    if (!is_installed("RcppHNSW")) {
+      stop("RcppHNSW is required for nn_method = 'hnsw', please install it")
+    }
+    if (!is_ok_hnsw_metric(metric)) {
+      stop(
+        "bad metric: hnsw only supports 'euclidean', 'cosine' or ",
+        "'correlation' metrics"
+      )
+    }
+    if (!is_ok_hnsw_metric(target_metric)) {
+      stop(
+        "bad target_metric: hnsw only supports 'euclidean', 'cosine' or ",
+        "'correlation' metrics"
+      )
+    }
+  }
+
+  if (is.character(nn_method) && nn_method == "nndescent") {
+    if (!is_installed("rnndescent")) {
+      stop("rnndescent is required for nn_method = 'nndescent',",
+           " please install it")
+    }
+  }
 
   ret_extra <- ret_model || ret_nn || ret_fgraph || ret_sigma || ret_localr
 
@@ -2548,10 +3199,10 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     n_vertices <- x2nv(nn_method)
     stopifnot(n_vertices > 0)
     num_precomputed_nns <- check_graph_list(nn_method, n_vertices,
-                                            bipartite = FALSE)
+      bipartite = FALSE
+    )
     Xnames <- nn_graph_row_names_list(nn_method)
-  }
-  else if (methods::is(X, "dist")) {
+  } else if (inherits(X, "dist")) {
     if (ret_model) {
       stop("Can only create models with dense matrix or data frame input")
     }
@@ -2559,8 +3210,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     n_vertices <- attr(X, "Size")
     tsmessage("Read ", n_vertices, " rows")
     Xnames <- labels(X)
-  }
-  else if (is_sparse_matrix(X)) {
+  } else if (is_sparse_matrix(X) && sparse_X_is_distance_matrix) {
     if (ret_model) {
       stop("Can only create models with dense matrix or data frame input")
     }
@@ -2571,18 +3221,18 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     }
     tsmessage("Read ", n_vertices, " rows of sparse distance matrix")
     Xnames <- row.names(X)
-  }
-  else {
+  } else {
     cat_ids <- NULL
     norig_col <- ncol(X)
-    if (methods::is(X, "data.frame") || methods::is(X, "matrix")) {
+    if (methods::is(X, "data.frame") || methods::is(X, "matrix") || is_sparse_matrix(X)) {
       cat_res <- find_categoricals(metric)
       metric <- cat_res$metrics
       cat_ids <- cat_res$categoricals
       # Convert categorical columns to factors if they aren't already
       if (!is.null(cat_ids)) {
         X[, cat_ids] <- sapply(X[, cat_ids, drop = FALSE], factor,
-                               simplify = methods::is(X, "matrix"))
+          simplify = methods::is(X, "matrix")
+        )
         Xcat <- X[, cat_ids, drop = FALSE]
       }
 
@@ -2593,7 +3243,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
         }
         tsmessage("Converting dataframe to numerical matrix")
         if (length(indexes) != ncol(X)) {
-         X <- X[, indexes]
+          X <- X[, indexes]
         }
         X <- as.matrix(X)
       }
@@ -2607,8 +3257,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
           ", this may give poor or unexpected results"
         )
       }
-    }
-    else {
+    } else {
       stop("Unknown input data format")
     }
     checkna(X)
@@ -2624,6 +3273,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       )
     }
     Xnames <- row.names(X)
+    X <- remove_scaling_attrs(X)
     X <- scale_input(X,
       scale_type = scale, ret_model = ret_model,
       verbose = verbose
@@ -2633,7 +3283,8 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
   # Store number of precomputed nn if X is non-NULL (NULL X case handled above)
   if (nn_is_precomputed(nn_method) && num_precomputed_nns == 0) {
     num_precomputed_nns <- check_graph_list(nn_method, n_vertices,
-                                          bipartite = FALSE)
+      bipartite = FALSE
+    )
     if (is.null(Xnames)) {
       Xnames <- nn_graph_row_names_list(nn_method)
     }
@@ -2652,8 +3303,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
         # error to be too large
         tsmessage("Setting n_neighbors to ", n_vertices)
         n_neighbors <- n_vertices
-      }
-      else {
+      } else {
         stop("n_neighbors must be smaller than the dataset size")
       }
     }
@@ -2662,16 +3312,15 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
   if (!is.list(metric)) {
     metrics <- list(c())
     names(metrics) <- metric
-  }
-  else {
+  } else {
     metrics <- metric
   }
 
-  # For typical case of numeric matrix X and not using hamming distance, save
+  # For typical case of numeric matrix X and not using binary metric, save
   # PCA results here in case initialization uses PCA too
   pca_models <- NULL
   pca_shortcut <- FALSE
-  if (!is.null(pca) && length(metric) == 1 && metric != "hamming" &&
+  if (!is.null(pca) && length(metric) == 1 && !is_binary_metric(metric) &&
     is.matrix(X) && ncol(X) > pca) {
     tsmessage("Reducing X column dimension to ", pca, " via PCA")
     pca_res <- pca_init(X,
@@ -2682,8 +3331,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       X <- pca_res$scores
       pca_models[["1"]] <- pca_res[c("center", "rotation")]
       pca_res <- NULL
-    }
-    else {
+    } else {
       X <- pca_res
     }
     pca_shortcut <- TRUE
@@ -2699,19 +3347,33 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
         rho = NULL
       )
     need_sigma <- FALSE
-  }
-  else {
+  } else {
     need_sigma <- ret_sigma || ret_localr || !is.null(dens_scale)
-    d2sr <- data2set(X, Xcat, n_neighbors, metrics, nn_method,
-      n_trees, search_k,
+    d2sr <- data2set(
+      X,
+      Xcat,
+      n_neighbors,
+      metrics,
+      nn_method,
+      n_trees,
+      search_k,
       method,
-      set_op_mix_ratio, local_connectivity, bandwidth,
-      perplexity, kernel, need_sigma,
-      n_threads, grain_size,
+      set_op_mix_ratio,
+      local_connectivity,
+      bandwidth,
+      perplexity,
+      kernel,
+      need_sigma,
+      n_threads,
+      grain_size,
       ret_model,
-      pca = pca, pca_center = pca_center, pca_method = pca_method,
+      pca = pca,
+      pca_center = pca_center,
+      pca_method = pca_method,
       n_vertices = n_vertices,
+      nn_args = nn_args,
       tmpdir = tmpdir,
+      sparse_is_distance = sparse_X_is_distance_matrix,
       verbose = verbose
     )
   }
@@ -2741,8 +3403,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     if (!is.list(target_metric)) {
       target_metrics <- list(c())
       names(target_metrics) <- target_metric
-    }
-    else {
+    } else {
       target_metrics <- target_metric
     }
 
@@ -2754,8 +3415,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       ycat_ids <- ycat_res$categoricals
       if (!is.null(ycat_ids)) {
         ycat <- y[, ycat_ids, drop = FALSE]
-      }
-      else {
+      } else {
         ycindexes <- which(vapply(y, is.factor, logical(1)))
         if (length(ycindexes) > 0) {
           ycat <- (y[, ycindexes, drop = FALSE])
@@ -2766,18 +3426,14 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 
       if (length(yindexes) > 0) {
         y <- as.matrix(y[, yindexes])
-      }
-      else {
+      } else {
         y <- NULL
       }
-    }
-    else if (is.list(y)) {
+    } else if (is.list(y)) {
       nn_method <- y
-    }
-    else if (is.numeric(y)) {
+    } else if (is.numeric(y)) {
       y <- as.matrix(y)
-    }
-    else if (is.factor(y)) {
+    } else if (is.factor(y)) {
       ycat <- data.frame(y)
       y <- NULL
     }
@@ -2808,8 +3464,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       V <- set_intersect(V, yd2sr$V, target_weight, reset_connectivity = TRUE)
       yd2sr$V <- NULL
       yd2sr$nns <- NULL
-    }
-    else if (!is.null(ycat)) {
+    } else if (!is.null(ycat)) {
       V <- categorical_intersection_df(ycat, V,
         weight = target_weight,
         verbose = verbose
@@ -2829,25 +3484,28 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     }
     tsmessage("Initializing from user-supplied matrix")
     embedding <- scale_coords(init, init_sdev, verbose = verbose)
-  }
-  else if (!(methods::is(init, "character") && length(init) == 1)) {
+  } else if (!(methods::is(init, "character") && length(init) == 1)) {
     if (is.null(init) && !is.null(n_epochs) && n_epochs == 0) {
       embedding <- NULL
       if (!ret_extra) {
-        warning("Neither high-dimensional nor low-dimensional data will be ",
-        "returned with this combination of settings")
+        warning(
+          "Neither high-dimensional nor low-dimensional data will be ",
+          "returned with this combination of settings"
+        )
       }
       if (ret_model) {
-        warning("Returning a model but it will not be valid for transforming ",
-                "new data")
+        warning(
+          "Returning a model but it will not be valid for transforming ",
+          "new data"
+        )
       }
+    } else {
+      stop(
+        "init should be either a matrix or string describing the ",
+        "initialization method"
+      )
     }
-    else {
-      stop("init should be either a matrix or string describing the ",
-           "initialization method")
-    }
-  }
-  else {
+  } else {
     init <- match.arg(tolower(init), c(
       "spectral", "random", "lvrandom", "normlaplacian",
       "laplacian", "spca", "pca", "inormlaplacian", "ispectral",
@@ -2861,10 +3519,10 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
         if (is.null(X)) {
           tsmessage("falling back to random initialization", time_stamp = FALSE)
           init <- "random"
-        }
-        else {
+        } else {
           tsmessage("falling back to 'spca' initialization with init_sdev = 1",
-                    time_stamp = FALSE)
+            time_stamp = FALSE
+          )
           init <- "spca"
           init_sdev <- 1
         }
@@ -2874,14 +3532,13 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     # Don't repeat PCA initialization if we've already done it once
     if (pca_shortcut && init %in% c("spca", "pca", "pacpca") && pca >= n_components) {
       embedding <- X[, 1:n_components]
-      switch (init,
+      switch(init,
         spca = tsmessage("Initializing from scaled PCA"),
         pca = tsmessage("Initializing from PCA"),
         pacpca = tsmessage("Initializing from PaCMAP-style PCA"),
         stop("Unknown init method '", init, "'")
       )
-    }
-    else {
+    } else {
       embedding <- switch(init,
         spectral = spectral_init(V, ndim = n_components, verbose = verbose),
         random = rand_init(n_vertices, n_components, verbose = verbose),
@@ -2892,12 +3549,18 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
         ),
         laplacian = laplacian_eigenmap(V, ndim = n_components, verbose = verbose),
         # we handle scaling pca below
-        spca = pca_init(X, ndim = n_components, pca_method = pca_method,
-                        verbose = verbose),
-        pca = pca_init(X, ndim = n_components, pca_method = pca_method,
-                       verbose = verbose),
-        pacpca = pca_init(X, ndim = n_components, pca_method = pca_method,
-                           verbose = verbose),
+        spca = pca_init(X,
+          ndim = n_components, pca_method = pca_method,
+          verbose = verbose
+        ),
+        pca = pca_init(X,
+          ndim = n_components, pca_method = pca_method,
+          verbose = verbose
+        ),
+        pacpca = pca_init(X,
+          ndim = n_components, pca_method = pca_method,
+          verbose = verbose
+        ),
         ispectral = irlba_spectral_init(V, ndim = n_components, verbose = verbose),
         inormlaplacian = irlba_normalized_laplacian_init(V,
           ndim = n_components,
@@ -2915,19 +3578,11 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     if (init == "pacpca") {
       embedding <- 0.01 * embedding
     }
-
     if (!is.null(init_sdev) || init == "spca") {
       if (is.null(init_sdev)) {
         init_sdev <- 1e-4
       }
-      if (is.numeric(init_sdev)) {
-        embedding <- scale_coords(embedding, init_sdev, verbose = verbose)
-      }
-      else if (is.character(init_sdev) && init_sdev == "range") {
-        # #99: range scale coordinates like python UMAP does
-        tsmessage("Range-scaling initial input columns to 0-10")
-        embedding <- apply(embedding, 2, range_scale, max = 10.0)
-      }
+      embedding <- scale_coords(embedding, init_sdev, verbose = verbose)
     }
   }
   if (any(is.na(embedding))) {
@@ -2937,12 +3592,10 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
   if (is.null(n_epochs) || n_epochs < 0) {
     if (method == "largevis") {
       n_epochs <- lvish_epochs(n_vertices, V)
-    }
-    else {
+    } else {
       if (n_vertices <= 10000) {
         n_epochs <- 500
-      }
-      else {
+      } else {
         n_epochs <- 200
       }
     }
@@ -2956,8 +3609,10 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 
   if (n_epochs > 0) {
     if (any(apply(embedding, 2, stats::sd) > 10.0)) {
-      warning("Initial embedding standard deviation > 10.0, this can lead to ",
-              "poor optimization")
+      warning(
+        "Initial embedding standard deviation > 10.0, this can lead to ",
+        "poor optimization"
+      )
     }
 
     # remove edges which can't be sampled due to n_epochs
@@ -2972,8 +3627,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       positive_head <- Matrix::which(V != 0, arr.ind = TRUE)[, 2] - 1
       # tail is unordered
       positive_tail <- V@i
-    }
-    else {
+    } else {
       # Use the Python UMAP ordering
       # head is unordered
       positive_head <- V@i
@@ -3044,7 +3698,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     embedding <- scale(embedding, center = TRUE, scale = FALSE)
 
     if (is.null(row.names(embedding)) &&
-        !is.null(Xnames) && length(Xnames) == nrow(embedding)) {
+      !is.null(Xnames) && length(Xnames) == nrow(embedding)) {
       row.names(embedding) <- Xnames
     }
     tsmessage("Optimization finished")
@@ -3055,7 +3709,11 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     res <- list(embedding = embedding)
     if (ret_model) {
       res <- append(res, list(
-        scale_info = if (!is.null(X)) { attr_to_scale_info(X) } else { NULL },
+        scale_info = if (!is.null(X)) {
+          attr_to_scale_info(X)
+        } else {
+          NULL
+        },
         search_k = search_k,
         local_connectivity = local_connectivity,
         n_epochs = n_epochs,
@@ -3076,12 +3734,13 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
         min_dist = min_dist,
         spread = spread,
         binary_edge_weights = binary_edge_weights,
-        seed = seed
+        seed = seed,
+        nn_method = nn_method,
+        nn_args = nn_args
       ))
       if (nn_is_precomputed(nn_method)) {
         res$n_neighbors <- nn_graph_nbrs_list(nn_method)
-      }
-      else {
+      } else {
         res$n_neighbors <- n_neighbors
       }
       if (method == "leopold") {
@@ -3096,8 +3755,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
             res$nn_index[[i]] <- nns[[i]]$index
           }
         }
-      }
-      else {
+      } else {
         if (!is.null(nns[[1]]$index)) {
           res$nn_index <- nns[[1]]$index
           if (is.null(res$metric[[1]])) {
@@ -3105,21 +3763,27 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
             # of them, but for loading the NN index we need the number of
             # columns explicitly (we don't have access to the column dimension of
             # the input data at load time)
-            # To be sure of the dimensionality, fetch the first item from the
-            # index and see how many elements are in the returned vector.
-            if(!is.null(X)){
-              rcppannoy <- get_rcppannoy(res$nn_index)
-              res$metric[[1]] <- list(ndim = length(rcppannoy$getItemsVector(0)))
-            } else {
-              res$metric[[1]] <- list()
+            if (res$nn_index$type %in% c("annoyv2", "hnswv1", "nndescentv1")) {
+              res$metric[[1]] <- list(ndim = res$nn_index$ndim)
+            }
+            else {
+              # To be sure of the dimensionality, fetch the first item from the
+              # index and see how many elements are in the returned vector.
+              if (!is.null(X)) {
+                rcppannoy <- get_rcppannoy(res$nn_index)
+                res$metric[[1]] <- list(ndim = length(rcppannoy$getItemsVector(0)))
+              } else {
+                res$metric[[1]] <- list()
+              }
             }
           }
-        }
-        else {
+        } else {
           if (nn_is_precomputed(nn_method)) {
-            tsmessage("Note: model requested with precomputed neighbors. ",
-                      "For transforming new data, distance data must be ",
-                      "provided separately")
+            tsmessage(
+              "Note: model requested with precomputed neighbors. ",
+              "For transforming new data, distance data must be ",
+              "provided separately"
+            )
           }
         }
       }
@@ -3136,8 +3800,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
             row.names(res$nn[[i]]$idx) <- Xnames
             row.names(res$nn[[i]]$dist) <- Xnames
           }
-        }
-        else if (is_sparse_matrix(nns[[i]])) {
+        } else if (is_sparse_matrix(nns[[i]])) {
           res$nn[[i]] <- nns[[i]]
           if (!is.null(Xnames) && nrow(res$nn[[i]]) == length(Xnames)) {
             row.names(res$nn[[i]]) <- Xnames
@@ -3150,8 +3813,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     if (ret_fgraph) {
       if (method == "largevis") {
         res$P <- V
-      }
-      else {
+      } else {
         res$fgraph <- V
       }
     }
@@ -3163,8 +3825,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     if (ret_localr && !is.null(localr)) {
       res$localr <- localr
     }
-  }
-  else {
+  } else {
     res <- embedding
   }
 
@@ -3263,13 +3924,33 @@ save_uwot <- function(model, file, unload = FALSE, verbose = FALSE) {
       # save each nn index inside tempdir/uwot/model
       metrics <- names(model$metric)
       n_metrics <- length(metrics)
+
       for (i in 1:n_metrics) {
-        nn_tmpfname <- file.path(uwot_dir, paste0("nn", i))
         if (n_metrics == 1) {
-          model$nn_index$ann$save(nn_tmpfname)
+          nn_index <- model$nn_index
         }
         else {
-          model$nn_index[[i]]$ann$save(nn_tmpfname)
+          nn_index <- model$nn_index[[i]]
+        }
+
+        if (startsWith(nn_index$type, "annoy") ||
+            startsWith(nn_index$type, "hnsw")) {
+
+            nn_tmpfname <- file.path(uwot_dir, paste0("nn", i))
+            nn_meta_tmpfname <- file.path(uwot_dir, paste0("nn-meta", i))
+            nn_index$ann$save(nn_tmpfname)
+
+            # save metadata wrapper around the index separately
+            meta_data <- nn_index
+            meta_data$ann <- NULL
+            saveRDS(meta_data, file = nn_meta_tmpfname)
+        }
+        else if (startsWith(nn_index$type, "nndescent")) {
+          nn_tmpfname <- file.path(uwot_dir, paste0("nn", i))
+          saveRDS(nn_index, file = nn_tmpfname)
+        }
+        else {
+          stop("unsupported nn index type: ", model$nn_index$type)
         }
       }
 
@@ -3286,9 +3967,11 @@ save_uwot <- function(model, file, unload = FALSE, verbose = FALSE) {
       if (is_win7()) {
         extra_flags <- "--force-local"
       }
-      utils::tar(tarfile = tmp_model_file,
-                 extra_flags = extra_flags,
-                 files = "uwot/")
+      utils::tar(
+        tarfile = tmp_model_file,
+        extra_flags = extra_flags,
+        files = "uwot/"
+      )
     },
     finally = {
       setwd(wd)
@@ -3368,9 +4051,10 @@ load_uwot <- function(file, verbose = FALSE) {
     extras <- "--force-local"
   }
   utils::untar(abspath(file),
-               exdir = mod_dir,
-               extras = extras,
-               verbose = verbose)
+    exdir = mod_dir,
+    extras = extras,
+    verbose = verbose
+  )
 
   model_fname <- file.path(mod_dir, "uwot/model")
   if (!file.exists(model_fname)) {
@@ -3381,6 +4065,10 @@ load_uwot <- function(file, verbose = FALSE) {
   metrics <- names(model$metric)
   n_metrics <- length(metrics)
 
+  nn_method <- model$nn_method
+  if (is.null(nn_method)) {
+    nn_method <- "annoy"
+  }
   for (i in 1:n_metrics) {
     nn_fname <- file.path(mod_dir, paste0("uwot/nn", i))
     if (!file.exists(nn_fname)) {
@@ -3393,24 +4081,51 @@ load_uwot <- function(file, verbose = FALSE) {
       # named 'ndim' giving the number of dimensions directly: all columns
       # are used in this metric
       ndim <- model$metric[[i]]$ndim
-    }
-    else {
+    } else {
       # otherwise, metric specifies the name or index used for each metric,
       # so the dimension is the number of them
-      ndim = length(model$metric[[i]])
+      ndim <- length(model$metric[[i]])
     }
-    annoy_metric <- metric
-    if (metric == "correlation") {
-      annoy_metric <- "cosine"
-    }
-    ann <- create_ann(annoy_metric, ndim = ndim)
-    ann$load(nn_fname)
+    if (nn_method == "annoy") {
+      annoy_metric <- metric
+      ann <- create_ann(annoy_metric, ndim = ndim)
+      ann$load(nn_fname)
 
-    if (n_metrics == 1) {
-      model$nn_index <- list(ann = ann, type = "annoyv1", metric = annoy_metric)
+      idx <-
+        list(
+          ann = ann,
+          type = "annoyv1",
+          metric = annoy_metric,
+          ndim = ndim
+        )
+      if (n_metrics == 1) {
+        model$nn_index <- idx
+      } else {
+        model$nn_index[[i]] <- idx
+      }
+    }
+    else if (nn_method == "hnsw") {
+      ann <- hnsw_load(metric, ndim = ndim, filename = nn_fname)
+      nn_meta_tmpfname <- file.path(mod_dir, paste0("uwot/nn-meta", i))
+      idx <- readRDS(nn_meta_tmpfname)
+      idx$ann <- ann
+
+      if (n_metrics == 1) {
+        model$nn_index <- idx
+      } else {
+        model$nn_index[[i]] <- idx
+      }
+    }
+    else if (nn_method == "nndescent") {
+      idx <- readRDS(nn_fname)
+      if (n_metrics == 1) {
+        model$nn_index <- idx
+      } else {
+        model$nn_index[[i]] <- idx
+      }
     }
     else {
-      model$nn_index[[i]] <- list(ann = ann, type = "annoyv1", metric = annoy_metric)
+      stop("Unknown nearest neighbor method ", nn_method)
     }
   }
   model$mod_dir <- mod_dir
@@ -3470,17 +4185,18 @@ load_uwot <- function(file, verbose = FALSE) {
 #' @seealso \code{\link{save_uwot}}, \code{\link{load_uwot}}
 #' @export
 unload_uwot <- function(model, cleanup = TRUE, verbose = FALSE) {
-  tsmessage("Unloading NN index: model will be invalid")
-  metrics <- names(model$metric)
-  n_metrics <- length(metrics)
-  for (i in 1:n_metrics) {
-    if (n_metrics == 1) {
-      rcppannoy <- get_rcppannoy(model$nn_index)
-      rcppannoy$unload()
-    }
-    else {
-      rcppannoy <- get_rcppannoy(model$nn_index[[i]])
-      rcppannoy$unload()
+  if (is.null(model$nn_method) || model$nn_method == "annoy") {
+    tsmessage("Unloading NN index: model will be invalid")
+    metrics <- names(model$metric)
+    n_metrics <- length(metrics)
+    for (i in 1:n_metrics) {
+      if (n_metrics == 1) {
+        rcppannoy <- get_rcppannoy(model$nn_index)
+        rcppannoy$unload()
+      } else {
+        rcppannoy <- get_rcppannoy(model$nn_index[[i]])
+        rcppannoy$unload()
+      }
     }
   }
 
@@ -3488,8 +4204,7 @@ unload_uwot <- function(model, cleanup = TRUE, verbose = FALSE) {
     if (is.null(model$mod_dir)) {
       tsmessage("Model is missing temp dir location, can't clean up")
       return()
-    }
-    else {
+    } else {
       mod_dir <- model$mod_dir
       if (!file.exists(mod_dir)) {
         tsmessage("model temp dir location '", mod_dir, "' no longer exists")
@@ -3508,16 +4223,31 @@ all_nn_indices_are_loaded <- function(model) {
   if (is.null(model$nn_index)) {
     stop("Invalid model: has no 'nn_index'")
   }
-
-  if (is.list(model$nn_index) && is.null(model$nn_index$type)) {
-    for (i in 1:length(model$nn_index)) {
-      rcppannoy <- get_rcppannoy(model$nn_index[[i]])
+  if (is.list(model$nn_index)) {
+    if (is.null(model$nn_index$type)) {
+      for (i in 1:length(model$nn_index)) {
+        rcppannoy <- get_rcppannoy(model$nn_index[[i]])
+        if (rcppannoy$getNTrees() == 0) {
+          return(FALSE)
+        }
+      }
+    }
+    else if (model$nn_index$type == "annoyv1") {
+      rcppannoy <- get_rcppannoy(model$nn_index)
       if (rcppannoy$getNTrees() == 0) {
         return(FALSE)
       }
     }
-  }
-  else {
+    else if (model$nn_index$type == "hnswv1") {
+      return(TRUE)
+    }
+    else if (model$nn_index$type == "nndescentv1") {
+      return(TRUE)
+    }
+    else {
+      stop("Invalid model: has unknown 'nn_index' type ", model$nn_index$type)
+    }
+  } else {
     rcppannoy <- get_rcppannoy(model$nn_index)
     if (rcppannoy$getNTrees() == 0) {
       return(FALSE)
@@ -3541,46 +4271,53 @@ x2nv <- function(X) {
   if (is.list(X)) {
     if (!is.null(X$idx)) {
       n_vertices <- x2nv(X$idx)
-    }
-    else {
+    } else {
       if (length(X) > 0) {
         n_vertices <- x2nv(X[[1]])
-      }
-      else {
+      } else {
         stop("Can't find n_vertices for list X")
       }
     }
-  }
-  else if (methods::is(X, "dist")) {
+  } else if (inherits(X, "dist")) {
     n_vertices <- attr(X, "Size")
-  }
-  else if (is_sparse_matrix(X)) {
+  } else if (is_sparse_matrix(X)) {
     # older code path where distance matrix was part of X rather than nn_method
     # used nrow, but transform was not supported so nrow == ncol
     n_vertices <- ncol(X)
-  }
-  else if (methods::is(X, "data.frame") || methods::is(X, "matrix")) {
+  } else if (methods::is(X, "data.frame") || methods::is(X, "matrix")) {
     n_vertices <- nrow(X)
-  }
-  else if (is.numeric(X)) {
+  } else if (is.numeric(X)) {
     n_vertices <- length(X)
-  }
-  else {
+  } else {
     stop("Can't find number of vertices for X of type '", class(X)[1], "'")
   }
   n_vertices
 }
 
-data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
-                     n_trees, search_k,
+data2set <- function(X,
+                     Xcat,
+                     n_neighbors,
+                     metrics,
+                     nn_method,
+                     n_trees,
+                     search_k,
                      method,
-                     set_op_mix_ratio, local_connectivity, bandwidth,
-                     perplexity, kernel, ret_sigma,
-                     n_threads, grain_size,
+                     set_op_mix_ratio,
+                     local_connectivity,
+                     bandwidth,
+                     perplexity,
+                     kernel,
+                     ret_sigma,
+                     n_threads,
+                     grain_size,
                      ret_model,
                      n_vertices = x2nv(X),
                      tmpdir = tempdir(),
-                     pca = NULL, pca_center = TRUE, pca_method = "irlba",
+                     pca = NULL,
+                     pca_center = TRUE,
+                     pca_method = "irlba",
+                     nn_args = list(),
+                     sparse_is_distance = TRUE,
                      verbose = FALSE) {
   V <- NULL
   nns <- list()
@@ -3593,8 +4330,7 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
       if (nblocks == 0) {
         stop("Incorrect format for precalculated neighbor data")
       }
-    }
-    else {
+    } else {
       nblocks <- 1
       # wrap nn data in a list so data is always a list of lists
       nn_method <- list(nn_method)
@@ -3609,23 +4345,32 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
   }
   mnames <- tolower(names(metrics))
   if (is.null(nn_method)) {
-    if (n_vertices < 4096 && !ret_model && all(mnames == "euclidean")) {
-      tsmessage("Using FNN for neighbor search, n_neighbors = ", n_neighbors)
-      nn_method <- "fnn"
+    if (methods::is(X, "matrix")) {
+      if (n_vertices < 4096 &&
+        !ret_model &&
+        all(mnames == "euclidean")) {
+        tsmessage("Using FNN for neighbor search, n_neighbors = ", n_neighbors)
+        nn_method <- "fnn"
+      } else {
+        tsmessage("Using Annoy for neighbor search, n_neighbors = ", n_neighbors)
+        nn_method <- "annoy"
+      }
     }
     else {
-      tsmessage("Using Annoy for neighbor search, n_neighbors = ", n_neighbors)
-      nn_method <- "annoy"
+      # It's a dist, or an actual distance matrix (sparse or triangular)
+      nn_method <- "matrix"
     }
   }
 
   pca_models <- list()
   for (i in 1:nblocks) {
     metric <- mnames[[i]]
-    metric <- match.arg(metric, c(
-      "euclidean", "cosine", "manhattan",
-      "hamming", "correlation", "precomputed"
-    ))
+    if (is.character(nn_method) && nn_method == "annoy") {
+      metric <- match.arg(metric, c(
+        "euclidean", "cosine", "manhattan",
+        "hamming", "correlation", "precomputed"
+      ))
+    }
     # Defaults for this block which can be overridden
     pca_i <- pca
     pca_center_i <- pca_center
@@ -3633,8 +4378,7 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
     subset <- metrics[[i]]
     if (is.null(subset)) {
       Xsub <- X
-    }
-    else if (is.list(subset)) {
+    } else if (is.list(subset)) {
       # e.g. "euclidean" = list(1:10, pca_center = FALSE),
       lsres <- lsplit_unnamed(subset)
       if (is.null(lsres$unnamed)) {
@@ -3658,8 +4402,7 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
         }
       }
       Xsub <- X[, subset, drop = FALSE]
-    }
-    else {
+    } else {
       Xsub <- X[, subset, drop = FALSE]
     }
 
@@ -3675,8 +4418,7 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
           " using metric '", metric, "'"
         )
       }
-    }
-    else {
+    } else {
       # X is NULL or dist or something like that
       if (nblocks > 1) {
         tsmessage(
@@ -3699,8 +4441,7 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
         Xsub <- pca_res$scores
         pca_models[[as.character(i)]] <- pca_res[c("center", "rotation")]
         pca_res <- NULL
-      }
-      else {
+      } else {
         Xsub <- pca_res
       }
     }
@@ -3712,17 +4453,27 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
       n_neighbors <- NULL
     }
 
-    x2set_res <- x2set(Xsub, n_neighbors, metric,
+    x2set_res <- x2set(
+      Xsub,
+      n_neighbors,
+      metric,
       nn_method = nn_sub,
-      n_trees, search_k,
+      n_trees,
+      search_k,
       method,
-      set_op_mix_ratio, local_connectivity, bandwidth,
-      perplexity, kernel,
+      set_op_mix_ratio,
+      local_connectivity,
+      bandwidth,
+      perplexity,
+      kernel,
       ret_sigma,
-      n_threads, grain_size,
+      n_threads,
+      grain_size,
       ret_model,
       n_vertices = n_vertices,
+      nn_args = nn_args,
       tmpdir = tmpdir,
+      sparse_is_distance = sparse_is_distance,
       verbose = verbose
     )
     Vblock <- x2set_res$V
@@ -3731,10 +4482,9 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
     names(nns)[[i]] <- metric
     if (is.null(V)) {
       V <- Vblock
-    }
-    else {
+    } else {
       # TODO: should at least offer the option to reset the local metric here
-      # TODO: make this the default (breaking change)
+      # TODO: make , reset_local_metric = TRUE the default (breaking change)
       V <- set_intersect(V, Vblock, weight = 0.5, reset_connectivity = TRUE)
     }
     if (ret_sigma && is.null(sigma)) {
@@ -3759,19 +4509,27 @@ data2set <- function(X, Xcat, n_neighbors, metrics, nn_method,
   res
 }
 
-x2nn <- function(X, n_neighbors, metric, nn_method,
-                 n_trees, search_k,
+x2nn <- function(X,
+                 n_neighbors,
+                 metric,
+                 nn_method,
+                 n_trees,
+                 search_k,
                  tmpdir = tempdir(),
-                 n_threads, grain_size,
+                 n_threads,
+                 grain_size,
                  ret_model,
                  n_vertices = x2nv(X),
+                 nn_args = list(),
+                 sparse_is_distance = TRUE,
                  verbose = FALSE) {
   if (is.list(nn_method)) {
     validate_nn(nn_method, n_vertices)
     nn <- nn_method
-  }
-  else {
-    nn_method <- match.arg(tolower(nn_method), c("annoy", "fnn"))
+  } else {
+    nn_method <-
+      match.arg(tolower(nn_method),
+                c("annoy", "fnn", "matrix", "hnsw", "nndescent"))
     if (nn_method == "fnn" && metric != "euclidean") {
       stop(
         "nn_method = 'FNN' is only compatible with distance metric ",
@@ -3781,12 +4539,20 @@ x2nn <- function(X, n_neighbors, metric, nn_method,
     if (nn_method == "fnn" && ret_model) {
       stop("nn_method = 'FNN' is incompatible with ret_model = TRUE")
     }
-    nn <- find_nn(X, n_neighbors,
-      method = nn_method, metric = metric,
-      n_trees = n_trees, search_k = search_k,
+    nn <- find_nn(
+      X,
+      n_neighbors,
+      method = nn_method,
+      metric = metric,
+      n_trees = n_trees,
+      search_k = search_k,
+      nn_args = nn_args,
       tmpdir = tmpdir,
-      n_threads = n_threads, grain_size = grain_size,
-      ret_index = ret_model, verbose = verbose
+      n_threads = n_threads,
+      grain_size = grain_size,
+      ret_index = ret_model,
+      sparse_is_distance = sparse_is_distance,
+      verbose = verbose
     )
   }
   nn
@@ -3810,8 +4576,8 @@ validate_nn <- function(nn_method, n_vertices) {
     stop("Precalculated 'dist' matrix must have ", n_vertices, " rows, but
          found ", nrow(nn_method$dist))
   }
-  if (ncol(nn_method$dist) !=  ncol(nn_method$idx)) {
-    stop("Precalculated 'dist' matrix must have ",  ncol(nn_method$idx), " cols, but
+  if (ncol(nn_method$dist) != ncol(nn_method$idx)) {
+    stop("Precalculated 'dist' matrix must have ", ncol(nn_method$idx), " cols, but
          found ", ncol(nn_method$dist))
   }
 }
@@ -3822,7 +4588,6 @@ nn2set <- function(method, nn,
                    ret_sigma,
                    n_threads, grain_size,
                    verbose = FALSE) {
-
   sigma <- NULL
   res <- list()
   if (method == "largevis") {
@@ -3843,8 +4608,7 @@ nn2set <- function(method, nn,
       res$sigma <- Vres$sigma
       res$dint <- Vres$dint
     }
-  }
-  else {
+  } else {
     Vres <- fuzzy_simplicial_set(
       nn = nn,
       set_op_mix_ratio = set_op_mix_ratio,
@@ -3859,24 +4623,33 @@ nn2set <- function(method, nn,
       res$V <- Vres$matrix
       res$sigma <- Vres$sigma
       res$rho <- Vres$rho
-    }
-    else {
+    } else {
       res$V <- Vres
     }
   }
   res
 }
 
-x2set <- function(X, n_neighbors, metric, nn_method,
-                  n_trees, search_k,
+x2set <- function(X,
+                  n_neighbors,
+                  metric,
+                  nn_method,
+                  n_trees,
+                  search_k,
                   method,
-                  set_op_mix_ratio, local_connectivity, bandwidth,
-                  perplexity, kernel,
+                  set_op_mix_ratio,
+                  local_connectivity,
+                  bandwidth,
+                  perplexity,
+                  kernel,
                   ret_sigma,
-                  n_threads, grain_size,
+                  n_threads,
+                  grain_size,
                   ret_model,
                   n_vertices = x2nv(X),
                   tmpdir = tempdir(),
+                  nn_args = list(),
+                  sparse_is_distance = TRUE,
                   verbose = FALSE) {
   if (is_sparse_matrix(nn_method)) {
     nn <- nn_method
@@ -3886,17 +4659,21 @@ x2set <- function(X, n_neighbors, metric, nn_method,
     if (nrow(nn) != n_vertices) {
       stop("Sparse distance matrix must have same dimensions as input data")
     }
-  }
-  else {
-    nn <- x2nn(X,
+  } else {
+    nn <- x2nn(
+      X,
       n_neighbors = n_neighbors,
       metric = metric,
       nn_method = nn_method,
-      n_trees = n_trees, search_k = search_k,
+      n_trees = n_trees,
+      search_k = search_k,
       tmpdir = tmpdir,
-      n_threads = n_threads, grain_size = grain_size,
+      n_threads = n_threads,
+      grain_size = grain_size,
       ret_model = ret_model,
+      nn_args = nn_args,
       n_vertices = n_vertices,
+      sparse_is_distance = sparse_is_distance,
       verbose = verbose
     )
     if (any(is.infinite(nn$dist))) {
@@ -3905,10 +4682,17 @@ x2set <- function(X, n_neighbors, metric, nn_method,
   }
   gc()
 
-  nn2set_res <- nn2set(method, nn,
-    set_op_mix_ratio, local_connectivity, bandwidth,
-    perplexity, kernel, ret_sigma,
-    n_threads, grain_size,
+  nn2set_res <- nn2set(
+    method,
+    nn,
+    set_op_mix_ratio,
+    local_connectivity,
+    bandwidth,
+    perplexity,
+    kernel,
+    ret_sigma,
+    n_threads,
+    grain_size,
     verbose = verbose
   )
   V <- nn2set_res$V
@@ -3940,8 +4724,10 @@ set_intersect <- function(A, B, weight = 0.5, reset_connectivity = TRUE,
   # https://github.com/lmcinnes/umap/issues/58#issuecomment-437633658
   # For now always reset
   if (reset_connectivity) {
-    A <- reset_local_connectivity(A, reset_local_metric = reset_local_metric,
-                                  n_threads = n_threads, verbose = verbose)
+    A <- reset_local_connectivity(A,
+      reset_local_metric = reset_local_metric,
+      n_threads = n_threads, verbose = verbose
+    )
   }
   A
 }
@@ -3966,8 +4752,7 @@ categorical_intersection <- function(x, V, weight, verbose = FALSE) {
   }
   if (weight < 1.0) {
     far_dist <- 2.5 * (1.0 / (1.0 - weight))
-  }
-  else {
+  } else {
     far_dist <- 1.0e12
   }
   tsmessage(
@@ -4023,11 +4808,9 @@ lvish_samples <- function(n_vertices) {
 
   if (n_vertices < 10000) {
     n_samples <- 1000
-  }
-  else if (n_vertices < 1000000) {
+  } else if (n_vertices < 1000000) {
     n_samples <- (n_vertices - 10000) * 9000 / (1000000 - 10000) + 1000
-  }
-  else {
+  } else {
     n_samples <- n_vertices / 100
   }
 
@@ -4045,11 +4828,9 @@ lvish_epochs <- function(n_vertices, V) {
 scale_input <- function(X, scale_type, ret_model = FALSE, verbose = FALSE) {
   if (is.null(scale_type)) {
     scale_type <- "none"
-  }
-  else if (is.logical(scale_type)) {
+  } else if (is.logical(scale_type)) {
     scale_type <- ifelse(scale_type, "scale", "none")
-  }
-  else if (tolower(scale_type) == "z") {
+  } else if (tolower(scale_type) == "z") {
     scale_type <- "scale"
   }
 
@@ -4127,7 +4908,7 @@ attr_to_scale_info <- function(X) {
 }
 
 get_opt_args <- function(opt_args, alpha) {
-  default_batch_opt = "adam"
+  default_batch_opt <- "adam"
   default_opt_args <- list(
     sgd = list(alpha = alpha),
     adam = list(alpha = alpha, beta1 = 0.5, beta2 = 0.9, eps = 1e-7)
@@ -4157,9 +4938,9 @@ get_opt_args <- function(opt_args, alpha) {
 # this function to avoid repeatedly calling it inside the optimization loop.
 scale_radii <- function(localr, dens_scale, a) {
   log_denso <- -log(localr)
-  min_densl <- a * (10 ^ (-2 * dens_scale))
+  min_densl <- a * (10^(-2 * dens_scale))
   log_min_densl <- log(min_densl)
-  max_densl <- a * (10 ^ (2 * dens_scale))
+  max_densl <- a * (10^(2 * dens_scale))
   log_max_densl <- log(max_densl)
   log_denso_scale <- range_scale(log_denso, log_min_densl, log_max_densl)
   sqrt(exp(log_denso_scale))
@@ -4169,4 +4950,31 @@ scale_radii <- function(localr, dens_scale, a) {
 #' @importFrom Rcpp sourceCpp
 .onUnload <- function(libpath) {
   library.dynam.unload("uwot", libpath)
+}
+
+# Remove scaling attributes from a matrix
+# if the `scale` parameter is set then these attributes are assumed to have
+# been applied by uwot's internals and the equivalent scaling will be applied
+# to new data in umap_transform. However, these attributes could have been
+# applied by manually scaling the data before running any code in uwot, in which
+# case we should not save them as part of the model. This function is called
+# before applying any other scaling
+remove_scaling_attrs <- function(X) {
+  uwot_attrs <- c(
+    "scaled:range:min",
+    "scaled:range:max",
+    "scaled:colrange:min",
+    "scaled:colrange:max",
+    "scaled:maxabs",
+    "scaled:nzvcols",
+    "scaled:center",
+    "scaled:scale"
+  )
+  attrs <- names(attributes(X))
+  for (attr in attrs) {
+    if (attr %in% uwot_attrs) {
+      attributes(X)[[attr]] <- NULL
+    }
+  }
+  X
 }
