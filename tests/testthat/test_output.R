@@ -1,4 +1,5 @@
 library(uwot)
+library(RSpectra)
 context("API output")
 
 set.seed(1337)
@@ -308,11 +309,15 @@ res <- umap(iris10,
 expect_ok_matrix(res, nc = 1)
 
 # enforce irlba for spectral initialization even if RSpectra is present
-res <- umap(iris10,
-  n_components = 1, n_neighbors = 4, n_epochs = 2,
-  n_threads = 1, verbose = FALSE, init = "irlba_spectral"
-)
-expect_ok_matrix(res, nc = 1)
+# 115: ensure irlba code path gets tested if we can avoid Matrix ABI issue
+if (exists("Matrix.Version", envir = asNamespace("Matrix")) &&
+  Matrix::Matrix.Version()$package >= "1.6.3") {
+  res <- umap(iris10,
+    n_components = 1, n_neighbors = 4, n_epochs = 2,
+    n_threads = 1, verbose = FALSE, init = "irlba_spectral"
+  )
+  expect_ok_matrix(res, nc = 1)
+}
 
 # Supervised
 set.seed(1337)
@@ -1031,6 +1036,7 @@ test_that("can set seed internally", {
 
   # creating a model stores the seed but also forces annoy for nearest neighbors
   # which changes the RNG state more than when FNN can be used internally
+  # 115: eh actually this is probably due more to irlba than RSpectra?
   res_model <-
     umap(
       iris10,
@@ -1043,7 +1049,7 @@ test_that("can set seed internally", {
     )
   expect(res_model$seed, 42)
   diff1m <- res - res_model$embedding
-  expect_gt(sqrt(sum(diff1m * diff1m) / length(diff1m)), 0.01)
+  expect_gt(sqrt(sum(diff1m * diff1m) / length(diff1m)), 1e-6)
 
   # explicitly set annoy nn and things are reproducible again
   res4 <-

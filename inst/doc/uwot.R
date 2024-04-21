@@ -6,6 +6,7 @@ knitr::opts_chunk$set(
 
 ## ----setup--------------------------------------------------------------------
 library(uwot)
+library(RSpectra)
 
 ## ----plot function------------------------------------------------------------
 kabsch <- function(pm, qm) {
