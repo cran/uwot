@@ -1,3 +1,36 @@
+# uwot 0.2.3
+
+## New features:
+
+* New parameter: `rng_type`. This will be used in favor of the boolean 
+`pcg_rand` parameter, although `pcg_rand` will still work for backwards
+compatibility.
+* New negative sampling option: set `rng_type = "deterministic"` to use a
+deterministic sampling of vertices during the optimization phase. This should
+give qualitatively similar results to using a real PRNG, but has the advantage
+of being faster and giving more reproducible output. This feature was inspired
+by a comment by 
+[Leland McInnes on Reddit](https://www.reddit.com/r/MachineLearning/comments/1gsjfq9/comment/lxip9wy/).
+
+## Bug fixes and minor improvements
+
+* Setting `num_threads` directly in `umap2` did not result in the number of SGD
+threads being updated to that value when `batch = TRUE`, which it should have
+been.
+* Despite assertions to the contrary in version 0.2.1, `umap_transform`
+continued to return the fuzzy graph in transposed form. Thank you
+[PedroMilanezAlmeida](https://github.com/PedroMilanezAlmeida) for 
+reopening the issue (<https://github.com/jlmelville/uwot/issues/118>).
+* Relative paths could not be used to save a model. Thank you
+[Wouter van der Bijl](https://github.com/Ax3man) for the bug report
+(<https://github.com/jlmelville/uwot/issues/131>) and the suggested fix.
+* `repulsion_strength` was silently ignored if used with `tumap` or `umap2` with
+`a = 1, b = 1`. Ignoring the setting was on purpose, but it was not documented
+anywhere. `repulsion_strength` is now compatible with these settings.
+* It's no longer an error to provide a `pca` argument if the input data has a
+maximum rank smaller than the value of `pca`. No PCA is applied in this case.
+If `verbose = TRUE`, a message will be printed to inform the user.
+
 # uwot 0.2.2
 
 ## Bug fixes and minor improvements
@@ -294,7 +327,7 @@ updated as quickly and hence gradients are staler for longer), so it is highly
 recommended to set `n_epochs = 500` or higher. Thank you to 
 [Aaron Lun](https://github.com/LTLA) who not only came up with a way to
 implement this feature, but also wrote an entire 
-[C++ implementation of UMAP](https://github.com/LTLA/umappp) which does it 
+[C++ implementation of UMAP](https://github.com/libscran/umappp) which does it 
 (<https://github.com/jlmelville/uwot/issues/83>).
 * New parameter: `opt_args`. The default optimization method when `batch = TRUE`
 is [Adam](https://arxiv.org/abs/1412.6980). You can control its parameters by
@@ -305,7 +338,7 @@ gradient descent method like that used when `batch = FALSE`.
 * New parameter: `epoch_callback`. You may now pass a function which will be
 invoked at the end of each epoch. Mainly useful for producing an image of the
 state of the embedding at different points during the optimization. This is
-another feature taken from [umappp](https://github.com/LTLA/umappp).
+another feature taken from [umappp](https://github.com/libscran/umappp).
 * New parameter: `pca_method`, used when the `pca` parameter is supplied to
 reduce the initial dimensionality of the data. This controls which method is
 used to carry out the PCA and can be set to one of:

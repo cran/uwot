@@ -401,7 +401,19 @@
 #' @param pcg_rand If \code{TRUE}, use the PCG random number generator (O'Neill,
 #'   2014) during optimization. Otherwise, use the faster (but probably less
 #'   statistically good) Tausworthe "taus88" generator. The default is
-#'   \code{TRUE}.
+#'   \code{TRUE}. This parameter has been superseded by \code{rng_type} -- if
+#'   both are set, \code{rng_type} takes precedence.
+#' @param rng_type The type of random number generator to use during
+#'   optimization. One of:
+#'   \itemize{
+#'    \item{\code{"pcg"}}. Use the PCG random number generator (O'Neill, 2014).
+#'    \item{\code{"tausworthe"}}. Use the Tausworthe "taus88" generator.
+#'    \item{\code{"deterministic"}}. Use a deterministic number generator. This
+#'    isn't actually random, but may provide enough variation in the negative
+#'    sampling to give a good embedding and can provide a noticeable speed-up.
+#'   }
+#'   For backwards compatibility, by default this is unset and the choice of
+#'   \code{pcg_rand} is used (making "pcg" the effective default).
 #' @param fast_sgd If \code{TRUE}, then the following combination of parameters
 #'   is set: \code{pcg_rand = TRUE}, \code{n_sgd_threads = "auto"} and
 #'   \code{approx_pow = TRUE}. The default is \code{FALSE}. Setting this to
@@ -650,7 +662,7 @@
 #' \emph{Nature biotechnology}, \emph{39}(6), 765-774.
 #' \doi{10.1038/s41587-020-00801-7}
 #'
-#' O’Neill, M. E. (2014).
+#' O'Neill, M. E. (2014).
 #' \emph{PCG: A family of simple fast space-efficient statistically good
 #' algorithms for random number generation}
 #' (Report No. HMC-CS-2014-0905). Harvey Mudd College.
@@ -700,7 +712,8 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                  binary_edge_weights = FALSE,
                  dens_scale = NULL,
                  seed = NULL,
-                 nn_args = list()) {
+                 nn_args = list(),
+                 rng_type = NULL) {
   uwot(
     X = X, n_neighbors = n_neighbors, n_components = n_components,
     metric = metric, n_epochs = n_epochs, alpha = learning_rate, scale = scale,
@@ -732,7 +745,8 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     verbose = verbose,
     dens_scale = dens_scale,
     seed = seed,
-    nn_args = nn_args
+    nn_args = nn_args,
+    rng_type = rng_type
   )
 }
 
@@ -1172,7 +1186,19 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' @param pcg_rand If \code{TRUE}, use the PCG random number generator (O'Neill,
 #'   2014) during optimization. Otherwise, use the faster (but probably less
 #'   statistically good) Tausworthe "taus88" generator. The default is
-#'   \code{TRUE}.
+#'   \code{TRUE}. This parameter has been superseded by \code{rng_type} -- if
+#'   both are set, \code{rng_type} takes precedence.
+#' @param rng_type The type of random number generator to use during
+#'   optimization. One of:
+#'   \itemize{
+#'    \item{\code{"pcg"}}. Use the PCG random number generator (O'Neill, 2014).
+#'    \item{\code{"tausworthe"}}. Use the Tausworthe "taus88" generator.
+#'    \item{\code{"deterministic"}}. Use a deterministic number generator. This
+#'    isn't actually random, but may provide enough variation in the negative
+#'    sampling to give a good embedding and can provide a noticeable speed-up.
+#'   }
+#'   For backwards compatibility, by default this is unset and the choice of
+#'   \code{pcg_rand} is used (making "pcg" the effective default).
 #' @param fast_sgd If \code{TRUE}, then the following combination of parameters
 #'   is set: \code{pcg_rand = TRUE} and \code{n_sgd_threads = "auto"}. The
 #'   default is \code{FALSE}. Setting this to \code{TRUE} will speed up the
@@ -1384,7 +1410,7 @@ umap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' \emph{arXiv preprint} \emph{arXiv}:1802.03426.
 #' \url{https://arxiv.org/abs/1802.03426}
 #'
-#' O’Neill, M. E. (2014).
+#' O'Neill, M. E. (2014).
 #' \emph{PCG: A family of simple fast space-efficient statistically good
 #' algorithms for random number generation}
 #' (Report No. HMC-CS-2014-0905). Harvey Mudd College.
@@ -1433,7 +1459,8 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                   pca_method = NULL,
                   binary_edge_weights = FALSE,
                   seed = NULL,
-                  nn_args = list()) {
+                  nn_args = list(),
+                  rng_type = NULL) {
   uwot(
     X = X, n_neighbors = n_neighbors, n_components = n_components,
     metric = metric,
@@ -1464,7 +1491,8 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     seed = seed,
     tmpdir = tmpdir,
     verbose = verbose,
-    nn_args = nn_args
+    nn_args = nn_args,
+    rng_type = rng_type
   )
 }
 
@@ -1819,7 +1847,19 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' @param pcg_rand If \code{TRUE}, use the PCG random number generator (O'Neill,
 #'   2014) during optimization. Otherwise, use the faster (but probably less
 #'   statistically good) Tausworthe "taus88" generator. The default is
-#'   \code{TRUE}.
+#'   \code{TRUE}. This parameter has been superseded by \code{rng_type} -- if
+#'   both are set, \code{rng_type} takes precedence.
+#' @param rng_type The type of random number generator to use during
+#'   optimization. One of:
+#'   \itemize{
+#'    \item{\code{"pcg"}}. Use the PCG random number generator (O'Neill, 2014).
+#'    \item{\code{"tausworthe"}}. Use the Tausworthe "taus88" generator.
+#'    \item{\code{"deterministic"}}. Use a deterministic number generator. This
+#'    isn't actually random, but may provide enough variation in the negative
+#'    sampling to give a good embedding and can provide a noticeable speed-up.
+#'   }
+#'   For backwards compatibility, by default this is unset and the choice of
+#'   \code{pcg_rand} is used (making "pcg" the effective default).
 #' @param fast_sgd If \code{TRUE}, then the following combination of parameters
 #'   is set: \code{pcg_rand = TRUE} and \code{n_sgd_threads = "auto"}. The
 #'   default is \code{FALSE}. Setting this to \code{TRUE} will speed up the
@@ -1984,7 +2024,7 @@ tumap <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
 #' \emph{arXiv preprint} \emph{arXiv}:1802.03426.
 #' \url{https://arxiv.org/abs/1802.03426}
 #'
-#' O’Neill, M. E. (2014).
+#' O'Neill, M. E. (2014).
 #' \emph{PCG: A family of simple fast space-efficient statistically good
 #' algorithms for random number generation}
 #' (Report No. HMC-CS-2014-0905). Harvey Mudd College.
@@ -2029,7 +2069,8 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
                   opt_args = NULL, epoch_callback = NULL,
                   pca_method = NULL,
                   binary_edge_weights = FALSE,
-                  nn_args = list()) {
+                  nn_args = list(),
+                  rng_type = NULL) {
   uwot(X,
     n_neighbors = n_neighbors, n_components = n_components,
     metric = metric,
@@ -2054,7 +2095,8 @@ lvish <- function(X, perplexity = 50, n_neighbors = perplexity * 3,
     tmpdir = tmpdir,
     binary_edge_weights = binary_edge_weights,
     verbose = verbose,
-    nn_args = list()
+    nn_args = list(),
+    rng_type = rng_type
   )
 }
 
@@ -2716,7 +2758,19 @@ similarity_graph <- function(X = NULL, n_neighbors = NULL, metric = "euclidean",
 #' @param pcg_rand If \code{TRUE}, use the PCG random number generator (O'Neill,
 #'   2014) during optimization. Otherwise, use the faster (but probably less
 #'   statistically good) Tausworthe "taus88" generator. The default is
-#'   \code{TRUE}.
+#'   \code{TRUE}. This parameter has been superseded by \code{rng_type} -- if
+#'   both are set, \code{rng_type} takes precedence.
+#' @param rng_type The type of random number generator to use during
+#'   optimization. One of:
+#'   \itemize{
+#'    \item{\code{"pcg"}}. Use the PCG random number generator (O'Neill, 2014).
+#'    \item{\code{"tausworthe"}}. Use the Tausworthe "taus88" generator.
+#'    \item{\code{"deterministic"}}. Use a deterministic number generator. This
+#'    isn't actually random, but may provide enough variation in the negative
+#'    sampling to give a good embedding and can provide a noticeable speed-up.
+#'   }
+#'   For backwards compatibility, by default this is unset and the choice of
+#'   \code{pcg_rand} is used (making "pcg" the effective default).
 #' @param fast_sgd If \code{TRUE}, then the following combination of parameters
 #'   is set: \code{pcg_rand = TRUE}, \code{n_sgd_threads = "auto"} and
 #'   \code{approx_pow = TRUE}. The default is \code{FALSE}. Setting this to
@@ -2813,7 +2867,7 @@ similarity_graph <- function(X = NULL, n_neighbors = NULL, metric = "euclidean",
 #' \emph{arXiv preprint} \emph{arXiv}:1802.03426.
 #' \url{https://arxiv.org/abs/1802.03426}
 #'
-#' O’Neill, M. E. (2014).
+#' O'Neill, M. E. (2014).
 #' \emph{PCG: A family of simple fast space-efficient statistically good
 #' algorithms for random number generation}
 #' (Report No. HMC-CS-2014-0905). Harvey Mudd College.
@@ -2851,7 +2905,8 @@ optimize_graph_layout <-
            opt_args = NULL,
            epoch_callback = NULL,
            pca_method = NULL,
-           binary_edge_weights = FALSE) {
+           binary_edge_weights = FALSE,
+           rng_type = NULL) {
     if (!is_sparse_matrix(graph)) {
       stop("graph should be a sparse matrix")
     }
@@ -2901,7 +2956,8 @@ optimize_graph_layout <-
       batch = batch,
       opt_args = opt_args,
       epoch_callback = epoch_callback,
-      pca_method = pca_method
+      pca_method = pca_method,
+      rng_type = rng_type
     )
   }
 
@@ -3058,7 +3114,8 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
                  is_similarity_graph = FALSE,
                  seed = NULL,
                  nn_args = list(),
-                 sparse_X_is_distance_matrix = TRUE) {
+                 sparse_X_is_distance_matrix = TRUE,
+                 rng_type = "pcg") {
   if (is.null(n_threads)) {
     n_threads <- default_num_threads()
   }
@@ -3105,8 +3162,12 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     if (pca < n_components) {
       stop("'pca' must be >= n_components")
     }
-    if (pca > min(nrow(X), na.rm = col(X))) {
-      stop("'pca' must be <= min(nrow(X), ncol(X))")
+    if (pca > min(nrow(X), ncol(X))) {
+      tsmessage("pca = ",
+                pca,
+                " is greater than the number of rows or columns in X, ",
+                "ignoring pca")
+      pca <- NULL
     }
   }
   if (is.null(pca_method)) {
@@ -3149,6 +3210,11 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     tsmessage("Setting random seed ", seed)
     set.seed(seed)
   }
+
+  if (is.null(rng_type)) {
+    rng_type <- ifelse(pcg_rand, "pcg", "tausworthe")
+  }
+  rng_type <- match.arg(rng_type, c("pcg", "tausworthe", "deterministic"))
 
   if (is.character(nn_method) && nn_method == "hnsw") {
     if (!is_installed("RcppHNSW")) {
@@ -3512,7 +3578,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       "agspectral", "irlba_spectral", "irlba_laplacian", "pacpca"
     ))
 
-    if (init_is_spectral(init)) {
+    if (init_is_spectral(init) && init != "agspectral") {
       connected <- connected_components(V)
       if (connected$n_components > 1) {
         tsmessage("Found ", connected$n_components, " connected components, ", appendLF = FALSE)
@@ -3659,13 +3725,14 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
     method <- tolower(method)
     method_args <- switch(method,
       umap = list(a = a, b = b, gamma = gamma, approx_pow = approx_pow),
-      tumap = list(),
+      tumap = list(gamma = gamma),
       # a = 1 b = 10 for final phase of PaCMAP optimization
       pacmap = list(a = a, b = b),
       largevis = list(gamma = gamma),
       leopold = list(ai = ai, b = b, ndim = n_components),
       stop("Unknown dimensionality reduction method '", method, "'")
     )
+    tsmessage("Using rng type: ", rng_type)
 
     embedding <- t(embedding)
     embedding <- optimize_layout_r(
@@ -3683,7 +3750,7 @@ uwot <- function(X, n_neighbors = 15, n_components = 2, metric = "euclidean",
       initial_alpha = alpha,
       opt_args = full_opt_args,
       negative_sample_rate = negative_sample_rate,
-      pcg_rand = pcg_rand,
+      rng_type = rng_type,
       batch = batch,
       n_threads = n_sgd_threads,
       grain_size = grain_size,
@@ -3956,9 +4023,9 @@ save_uwot <- function(model, file, unload = FALSE, verbose = FALSE) {
 
       # archive the files under the temp dir into the single target file
       # change directory so the archive only contains one directory
+      tmp_model_file <- abspath(file)
       tsmessage("Changing to ", mod_dir)
       setwd(mod_dir)
-      tmp_model_file <- abspath(file)
       tsmessage("Creating ", tmp_model_file)
 
       # #109: Windows 7 tar needs "--force-local" to avoid interpreting colon

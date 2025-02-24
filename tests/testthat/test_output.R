@@ -309,15 +309,11 @@ res <- umap(iris10,
 expect_ok_matrix(res, nc = 1)
 
 # enforce irlba for spectral initialization even if RSpectra is present
-# 115: ensure irlba code path gets tested if we can avoid Matrix ABI issue
-if (exists("Matrix.Version", envir = asNamespace("Matrix")) &&
-  Matrix::Matrix.Version()$package >= "1.6.3") {
-  res <- umap(iris10,
-    n_components = 1, n_neighbors = 4, n_epochs = 2,
-    n_threads = 1, verbose = FALSE, init = "irlba_spectral"
-  )
+res <- umap(iris10,
+  n_components = 1, n_neighbors = 4, n_epochs = 2,
+  n_threads = 1, verbose = FALSE, init = "irlba_spectral"
+)
   expect_ok_matrix(res, nc = 1)
-}
 
 # Supervised
 set.seed(1337)
@@ -1080,3 +1076,43 @@ test_that("can provide nn_args", {
   expect_equal(res$nn_args$n_trees, 10)
 })
 
+
+test_that("deterministic negative sampling is reproducible", {
+  res_seed42 <- umap(
+    iris10,
+    seed = 42,
+    n_neighbors = 4,
+    n_epochs = 2,
+    learning_rate = 0.5,
+    init = iris10_pca,
+    verbose = FALSE,
+    n_threads = 0,
+    rng_type = "deterministic"
+  )
+  res_seed1337 <- umap(
+    iris10,
+    seed = 1337,
+    n_neighbors = 4,
+    n_epochs = 2,
+    learning_rate = 0.5,
+    init = iris10_pca,
+    verbose = FALSE,
+    n_threads = 0,
+    rng_type = "deterministic"
+  )
+  expect_ok_matrix(res_seed42)
+  expect_equal(res_seed42, res_seed1337)
+
+  res_seed42_t2 <- umap(
+    iris10,
+    seed = 42,
+    n_neighbors = 4,
+    n_epochs = 2,
+    learning_rate = 0.5,
+    init = iris10_pca,
+    verbose = FALSE,
+    n_threads = 2,
+    rng_type = "deterministic"
+  )
+  expect_equal(res_seed42, res_seed42_t2)
+})

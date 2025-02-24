@@ -44,8 +44,8 @@ inline auto clamp(float v, float lo, float hi) -> float {
 // rather than recalculating it in the gradient step
 inline auto d2diff(const std::vector<float> &x, std::size_t px,
                    const std::vector<float> &y, std::size_t py,
-                   std::size_t ndim, float dist_eps, std::vector<float> &diffxy)
-    -> float {
+                   std::size_t ndim, float dist_eps,
+                   std::vector<float> &diffxy) -> float {
   float d2 = 0.0;
   for (std::size_t d = 0; d < ndim; d++) {
     float diff = x[px + d] - y[py + d];
@@ -150,22 +150,24 @@ using apumap_gradient = base_umap_gradient<fastPrecisePow>;
 // distribution as used in t-SNE. This massively simplifies the gradient,
 // removing the pow calls, resulting in a noticeable speed increase (50% with
 // MNIST), although the resulting embedding has a larger spread than the
-// default. Also gamma is absent from this, because I believe it to be
-// un-necessary in the UMAP cost function.
+// default.
 class tumap_gradient {
 public:
-  tumap_gradient() = default;
+  tumap_gradient(float gamma) : gamma_2(gamma * 2.0){};
   auto grad_attr(float d2, std::size_t, std::size_t) const -> float {
     return -2.0 / (d2 + 1.0);
   }
   auto grad_rep(float d2, std::size_t, std::size_t) const -> float {
-    return 2.0 / ((0.001 + d2) * (d2 + 1.0));
+    return gamma_2 / ((0.001 + d2) * (d2 + 1.0));
   }
   auto clamp_grad(float grad_d) const -> float {
     return clamp(grad_d, clamp_lo, clamp_hi);
   }
   static const constexpr float clamp_hi = 4.0;
   static const constexpr float clamp_lo = -4.0;
+
+private:
+  float gamma_2;
 };
 
 // UMAP where a varies for each observation

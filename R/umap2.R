@@ -412,7 +412,19 @@
 #' @param pcg_rand If \code{TRUE}, use the PCG random number generator (O'Neill,
 #'   2014) during optimization. Otherwise, use the faster (but probably less
 #'   statistically good) Tausworthe "taus88" generator. The default is
-#'   \code{TRUE}.
+#'   \code{TRUE}. This parameter has been superseded by \code{rng_type} -- if
+#'   both are set, \code{rng_type} takes precedence.
+#' @param rng_type The type of random number generator to use during
+#'   optimization. One of:
+#'   \itemize{
+#'    \item{\code{"pcg"}}. Use the PCG random number generator (O'Neill, 2014).
+#'    \item{\code{"tausworthe"}}. Use the Tausworthe "taus88" generator.
+#'    \item{\code{"deterministic"}}. Use a deterministic number generator. This
+#'    isn't actually random, but may provide enough variation in the negative
+#'    sampling to give a good embedding and can provide a noticeable speed-up.
+#'   }
+#'   For backwards compatibility, by default this is unset and the choice of
+#'   \code{pcg_rand} is used (making "pcg" the effective default).
 #' @param fast_sgd If \code{TRUE}, then the following combination of parameters
 #'   is set: \code{pcg_rand = TRUE}, \code{n_sgd_threads = "auto"} and
 #'   \code{approx_pow = TRUE}. The default is \code{FALSE}. Setting this to
@@ -639,7 +651,7 @@
 #' \emph{Nature biotechnology}, \emph{39}(6), 765-774.
 #' \doi{10.1038/s41587-020-00801-7}
 #'
-#' O’Neill, M. E. (2014).
+#' O'Neill, M. E. (2014).
 #' \emph{PCG: A family of simple fast space-efficient statistically good
 #' algorithms for random number generation}
 #' (Report No. HMC-CS-2014-0905). Harvey Mudd College.
@@ -708,7 +720,8 @@ umap2 <-
            binary_edge_weights = FALSE,
            dens_scale = NULL,
            seed = NULL,
-           nn_args = list()) {
+           nn_args = list(),
+           rng_type = NULL) {
     if (is.null(nn_method)) {
       if (is_installed("RcppHNSW") &&
         is.character(metric) &&
@@ -728,23 +741,24 @@ umap2 <-
 
     if (is.null(n_threads)) {
       n_threads <- default_num_threads()
-      if (batch) {
-        n_sgd_threads <- n_threads
-      }
+    }
+    if (batch && is.numeric(n_sgd_threads) && n_sgd_threads == 0) {
+      n_sgd_threads <- n_threads
     }
 
     if (is_sparse_matrix(X)) {
       if (!methods::is(X, "dgCMatrix")) {
         stop("sparse X must be a dgCMatrix object")
       }
-      if (!is.list(nn_method)) {
+      if (!is.list(nn_method) && !is_sparse_matrix(nn_method)) {
         if (!is_installed("rnndescent")) {
           stop(
             "nearest neighbor search for sparse matrices requires the ",
             "'rnndescent' package, please install it"
           )
         }
-        if (!is.null(nn_method) && nn_method != "nndescent") {
+        if (!is.null(nn_method) &&
+          is.character(nn_method) && nn_method != "nndescent") {
           stop(
             "nearest neighbor search for sparse matrices only supports ",
             "the 'nndescent' method"
@@ -815,6 +829,7 @@ umap2 <-
       dens_scale = dens_scale,
       seed = seed,
       nn_args = nn_args,
-      sparse_X_is_distance_matrix = FALSE
+      sparse_X_is_distance_matrix = FALSE,
+      rng_type = rng_type
     )
   }

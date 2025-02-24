@@ -157,6 +157,15 @@
 #'       non-zero elements in the matrix is dependent on \code{n_epochs}. If you
 #'       are only interested in the fuzzy input graph (e.g. for clustering),
 #'       setting \code{n_epochs = 0} will avoid any further sparsifying.
+#'    \item \code{"nn"} the nearest neighbor graph for \code{X} with respect to
+#'      the observations in the \code{model}. The graph will be returned as a
+#'      list of two items: \code{idx} a matrix of indices, with as many rows
+#'      as there are items in \code{X} and as many columns as there are nearest
+#'      neighbors to be computed (this value is determined by the \code{model}).
+#'      The indices are those of the rows of the data used to build the
+#'      \code{model}, so they're not necessarily of much use unless you have
+#'      access to that data. The second item, \code{dist} is a matrix of the
+#'      equivalent distances, with the same dimensions as \code{idx}.
 #'   }
 #' @param seed Integer seed to use to initialize the random number generator
 #'   state. Combined with \code{n_sgd_threads = 1} or \code{batch = TRUE}, this
@@ -362,10 +371,20 @@ umap_transform <- function(X = NULL, model = NULL,
   negative_sample_rate <- model$negative_sample_rate
   approx_pow <- model$approx_pow
   norig_col <- model$norig_col
-  pcg_rand <- model$pcg_rand
-  if (is.null(pcg_rand)) {
-    tsmessage("Using PCG for random number generation")
-    pcg_rand <- TRUE
+
+  rng_type <- model$rng_type
+  if (is.null(rng_type)) {
+    pcg_rand <- model$pcg_rand
+    if (is.null(pcg_rand)) {
+      rng_type <- "pcg"
+    }
+    else {
+      if (pcg_rand) {
+        rng_type <- "pcg"
+      } else {
+        rng_type <- "tausworthe"
+      }
+    }
   }
   num_precomputed_nns <- model$num_precomputed_nns
   binary_edge_weights <- model$binary_edge_weights
@@ -784,6 +803,7 @@ umap_transform <- function(X = NULL, model = NULL,
 
     method_args <- switch(method,
       umap = list(a = a, b = b, gamma = gamma, approx_pow = approx_pow),
+      tumap = list(gamma = gamma),
       leopold2 = list(ai = ai, aj = aj, b = b, ndim = ndim),
       list()
     )
@@ -805,7 +825,7 @@ umap_transform <- function(X = NULL, model = NULL,
       initial_alpha = alpha / 4.0,
       opt_args = full_opt_args,
       negative_sample_rate = negative_sample_rate,
-      pcg_rand = pcg_rand,
+      rng_type = rng_type,
       batch = batch,
       n_threads = n_sgd_threads,
       grain_size = grain_size,
@@ -823,6 +843,11 @@ umap_transform <- function(X = NULL, model = NULL,
     res <- list(embedding = embedding)
     for (name in ret_extra) {
       if (name == "fgraph") {
+        if (batch) {
+          # #129: we transposed graph in the batch=TRUE case (#118) but need to
+          # transpose back for export
+          graph <- Matrix::t(graph)
+        }
         res$fgraph <- graph
       }
       if (name == "sigma") {
